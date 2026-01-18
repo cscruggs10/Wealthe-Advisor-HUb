@@ -1212,6 +1212,7 @@ export async function registerRoutes(app: Express) {
   // ============================================
 
   // This endpoint returns meta tag data for SSR/prerendering
+  // Title format: [Name] - Strategic [Designation] in [City] | Wealth Advisor Hub
   app.get("/api/seo/advisor/:slug", async (req, res) => {
     try {
       const advisor = await storage.getAdvisorBySlug(req.params.slug);
@@ -1219,10 +1220,11 @@ export async function registerRoutes(app: Express) {
         return res.status(404).json({ message: "Advisor not found" });
       }
 
-      const title = `${advisor.name} - ${advisor.designation} in ${advisor.city}, ${advisor.state} | Strategic Advisor Hub`;
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const title = `${advisor.name} - Strategic ${advisor.designation} in ${advisor.city} | Wealth Advisor Hub`;
       const description = advisor.bio
-        ? advisor.bio.substring(0, 160)
-        : `Find ${advisor.name}, a trusted ${advisor.designation} in ${advisor.city}, ${advisor.state}. ${advisor.specialties?.join(', ') || 'Tax planning, wealth management, and more.'}`;
+        ? advisor.bio.substring(0, 155) + '...'
+        : `Connect with ${advisor.name}, a strategic ${advisor.designation} in ${advisor.city}, ${advisor.state}. Specializing in ${advisor.specialties?.slice(0, 3).join(', ') || 'tax planning, wealth management, and proactive strategies'}.`;
 
       res.json({
         title,
@@ -1230,7 +1232,8 @@ export async function registerRoutes(app: Express) {
         ogTitle: title,
         ogDescription: description,
         ogType: 'profile',
-        canonical: `/advisor/${advisor.slug}`,
+        ogSiteName: 'Wealth Advisor Hub',
+        canonical: `${baseUrl}/advisor/${advisor.slug}`,
         structuredData: {
           "@context": "https://schema.org",
           "@type": "FinancialService",
@@ -1240,15 +1243,82 @@ export async function registerRoutes(app: Express) {
             "@type": "PostalAddress",
             "addressLocality": advisor.city,
             "addressRegion": advisor.state,
-            "postalCode": advisor.zipCode
+            "postalCode": advisor.zipCode,
+            "addressCountry": "US"
           },
-          "url": advisor.websiteUrl,
-          "sameAs": advisor.linkedinUrl ? [advisor.linkedinUrl] : undefined,
+          ...(advisor.websiteUrl && { "url": advisor.websiteUrl }),
+          ...(advisor.linkedinUrl && { "sameAs": [advisor.linkedinUrl] }),
+          ...(advisor.isVerifiedStrategist && { "award": "Verified Strategic Partner" }),
         }
       });
     } catch (error) {
       console.error('Error generating SEO data:', error);
       res.status(500).json({ message: "Failed to generate SEO data" });
+    }
+  });
+
+  // Test endpoint to simulate bot crawl and verify meta tag injection
+  app.get("/api/seo/test/:slug", async (req, res) => {
+    try {
+      const advisor = await storage.getAdvisorBySlug(req.params.slug);
+      if (!advisor) {
+        return res.status(404).json({
+          success: false,
+          message: "Advisor not found. Create a test advisor first."
+        });
+      }
+
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const title = `${advisor.name} - Strategic ${advisor.designation} in ${advisor.city} | Wealth Advisor Hub`;
+      const description = advisor.bio
+        ? advisor.bio.substring(0, 155) + '...'
+        : `Connect with ${advisor.name}, a strategic ${advisor.designation} in ${advisor.city}, ${advisor.state}. Specializing in ${advisor.specialties?.slice(0, 3).join(', ') || 'tax planning, wealth management, and proactive strategies'}.`;
+
+      // Return what LinkedIn/Google would see
+      const htmlPreview = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>${title}</title>
+    <meta name="description" content="${description}" />
+    <meta property="og:type" content="profile" />
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="${description}" />
+    <meta property="og:url" content="${baseUrl}/advisor/${advisor.slug}" />
+    <meta property="og:site_name" content="Wealth Advisor Hub" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${description}" />
+    <link rel="canonical" href="${baseUrl}/advisor/${advisor.slug}" />
+</head>
+<body>
+    <h1>SEO Meta Tag Preview</h1>
+    <p>This is what search engines and social media crawlers will see.</p>
+</body>
+</html>`;
+
+      res.json({
+        success: true,
+        advisor: {
+          name: advisor.name,
+          designation: advisor.designation,
+          city: advisor.city,
+          state: advisor.state,
+          slug: advisor.slug,
+          isVerifiedStrategist: advisor.isVerifiedStrategist,
+        },
+        seo: {
+          title,
+          description,
+          canonical: `${baseUrl}/advisor/${advisor.slug}`,
+        },
+        htmlPreview,
+        testUrl: `${baseUrl}/advisor/${advisor.slug}`,
+        instructions: "Use a tool like https://www.opengraph.xyz/ or LinkedIn Post Inspector to verify the meta tags are being served correctly."
+      });
+    } catch (error) {
+      console.error('Error testing SEO:', error);
+      res.status(500).json({ success: false, message: "Failed to test SEO" });
     }
   });
 

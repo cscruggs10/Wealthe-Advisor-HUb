@@ -10,16 +10,40 @@ import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 import { storage } from "./storage";
 
+// Bot/Crawler User-Agent patterns for logging
+const BOT_PATTERNS = [
+  /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i, /baiduspider/i,
+  /yandexbot/i, /facebookexternalhit/i, /linkedinbot/i, /twitterbot/i,
+  /whatsapp/i, /telegrambot/i, /discordbot/i, /slackbot/i, /pinterest/i,
+];
+
+function isBot(userAgent: string): boolean {
+  return BOT_PATTERNS.some(pattern => pattern.test(userAgent));
+}
+
+function getBotName(userAgent: string): string | null {
+  for (const pattern of BOT_PATTERNS) {
+    const match = userAgent.match(pattern);
+    if (match) return match[0];
+  }
+  return null;
+}
+
 // SEO: Generate dynamic meta tags for advisor profile pages
-async function generateAdvisorMetaTags(slug: string): Promise<string | null> {
+// Title format: [Name] - Strategic [Designation] in [City] | Wealth Advisor Hub
+async function generateAdvisorMetaTags(slug: string, baseUrl?: string): Promise<string | null> {
   try {
     const advisor = await storage.getAdvisorBySlug(slug);
     if (!advisor) return null;
 
-    const title = `${advisor.name} - ${advisor.designation} in ${advisor.city}, ${advisor.state} | Strategic Advisor Hub`;
+    // Title format per spec: [Name] - Strategic [Designation] in [City] | Wealth Advisor Hub
+    const title = `${advisor.name} - Strategic ${advisor.designation} in ${advisor.city} | Wealth Advisor Hub`;
+
     const description = advisor.bio
-      ? advisor.bio.substring(0, 160)
-      : `Find ${advisor.name}, a trusted ${advisor.designation} in ${advisor.city}, ${advisor.state}. ${advisor.specialties?.join(', ') || 'Tax planning, wealth management, and more.'}`;
+      ? advisor.bio.substring(0, 155) + '...'
+      : `Connect with ${advisor.name}, a strategic ${advisor.designation} in ${advisor.city}, ${advisor.state}. Specializing in ${advisor.specialties?.slice(0, 3).join(', ') || 'tax planning, wealth management, and proactive strategies'}.`;
+
+    const canonicalUrl = baseUrl ? `${baseUrl}/advisor/${advisor.slug}` : `/advisor/${advisor.slug}`;
 
     const structuredData = {
       "@context": "https://schema.org",
@@ -30,23 +54,35 @@ async function generateAdvisorMetaTags(slug: string): Promise<string | null> {
         "@type": "PostalAddress",
         "addressLocality": advisor.city,
         "addressRegion": advisor.state,
-        "postalCode": advisor.zipCode
+        "postalCode": advisor.zipCode,
+        "addressCountry": "US"
       },
       ...(advisor.websiteUrl && { "url": advisor.websiteUrl }),
       ...(advisor.linkedinUrl && { "sameAs": [advisor.linkedinUrl] }),
+      ...(advisor.isVerifiedStrategist && { "award": "Verified Strategic Partner" }),
     };
 
     return `
     <title>${title}</title>
     <meta name="description" content="${description}" />
+
+    <!-- Open Graph / Facebook / LinkedIn -->
+    <meta property="og:type" content="profile" />
     <meta property="og:title" content="${title}" />
     <meta property="og:description" content="${description}" />
-    <meta property="og:type" content="profile" />
-    <meta property="og:url" content="/advisor/${advisor.slug}" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:url" content="${canonicalUrl}" />
+    <meta property="og:site_name" content="Wealth Advisor Hub" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${title}" />
     <meta name="twitter:description" content="${description}" />
-    <link rel="canonical" href="/advisor/${advisor.slug}" />
+
+    <!-- SEO -->
+    <link rel="canonical" href="${canonicalUrl}" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Structured Data for Rich Snippets -->
     <script type="application/ld+json">${JSON.stringify(structuredData)}</script>
     `;
   } catch (error) {
@@ -98,6 +134,8 @@ export async function setupVite(app: Express, server: Server) {
   app.use(vite.middlewares);
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+    const userAgent = req.headers['user-agent'] || '';
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
 
     try {
       const clientTemplate = path.resolve(
@@ -117,7 +155,13 @@ export async function setupVite(app: Express, server: Server) {
       // SEO: Inject dynamic meta tags for advisor profile pages
       const advisorSlug = extractAdvisorSlug(url);
       if (advisorSlug) {
-        const metaTags = await generateAdvisorMetaTags(advisorSlug);
+        // Log bot/crawler visits for SEO monitoring
+        if (isBot(userAgent)) {
+          const botName = getBotName(userAgent);
+          log(`🤖 Bot detected: ${botName} crawling /advisor/${advisorSlug}`, 'SEO');
+        }
+
+        const metaTags = await generateAdvisorMetaTags(advisorSlug, baseUrl);
         if (metaTags) {
           // Replace default meta tags with dynamic ones
           template = template.replace(
@@ -128,6 +172,10 @@ export async function setupVite(app: Express, server: Server) {
             '</head>',
             `${metaTags}\n  </head>`
           );
+
+          if (isBot(userAgent)) {
+            log(`✅ Injected meta tags for advisor: ${advisorSlug}`, 'SEO');
+          }
         }
       }
 
@@ -155,6 +203,8 @@ export function serveStatic(app: Express) {
   // SEO: Inject dynamic meta tags for advisor profile pages in production
   app.use("*", async (req, res) => {
     const url = req.originalUrl;
+    const userAgent = req.headers['user-agent'] || '';
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
     const indexPath = path.resolve(distPath, "index.html");
 
     try {
@@ -163,7 +213,13 @@ export function serveStatic(app: Express) {
       // SEO: Inject dynamic meta tags for advisor profile pages
       const advisorSlug = extractAdvisorSlug(url);
       if (advisorSlug) {
-        const metaTags = await generateAdvisorMetaTags(advisorSlug);
+        // Log bot/crawler visits for SEO monitoring
+        if (isBot(userAgent)) {
+          const botName = getBotName(userAgent);
+          log(`🤖 Bot detected: ${botName} crawling /advisor/${advisorSlug}`, 'SEO');
+        }
+
+        const metaTags = await generateAdvisorMetaTags(advisorSlug, baseUrl);
         if (metaTags) {
           // Replace default meta tags with dynamic ones
           html = html.replace(
@@ -174,6 +230,10 @@ export function serveStatic(app: Express) {
             '</head>',
             `${metaTags}\n  </head>`
           );
+
+          if (isBot(userAgent)) {
+            log(`✅ Injected meta tags for advisor: ${advisorSlug}`, 'SEO');
+          }
         }
       }
 
