@@ -1,4 +1,4 @@
-import { 
+import {
   type Vehicle, type InsertVehicle,
   type BuyCode, type InsertBuyCode,
   type Offer, type InsertOffer,
@@ -8,9 +8,14 @@ import {
   vehicles, buyCodes, offers, offerActivities, dealers, transactions,
   type AdminUser, type InsertAdminUser,
   adminUsers,
+  // Strategic Advisor Hub
+  type Advisor, type InsertAdvisor,
+  type Lead, type InsertLead,
+  type AdvisorSearch,
+  advisors, leads,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, or, ilike, arrayContains } from "drizzle-orm";
 
 export interface IStorage {
   // Vehicles
@@ -61,6 +66,19 @@ export interface IStorage {
   // Admin Users
   getAdminByEmail(email: string): Promise<AdminUser | undefined>;
   createAdminUser(admin: InsertAdminUser): Promise<AdminUser>;
+
+  // Strategic Advisor Hub - Advisors
+  getAdvisors(search?: AdvisorSearch): Promise<Advisor[]>;
+  getAdvisorBySlug(slug: string): Promise<Advisor | undefined>;
+  getAdvisorById(id: string): Promise<Advisor | undefined>;
+  createAdvisor(advisor: InsertAdvisor): Promise<Advisor>;
+  updateAdvisor(id: string, advisor: Partial<Advisor>): Promise<Advisor>;
+
+  // Strategic Advisor Hub - Leads
+  createLead(lead: InsertLead): Promise<Lead>;
+  getLeadsByAdvisor(advisorId: string): Promise<Lead[]>;
+  getLeadsBySourcePage(sourcePage: string): Promise<Lead[]>;
+  getAllLeads(): Promise<Lead[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -288,6 +306,87 @@ export class DatabaseStorage implements IStorage {
   async createAdminUser(admin: InsertAdminUser): Promise<AdminUser> {
     const [newAdmin] = await db.insert(adminUsers).values(admin).returning();
     return newAdmin;
+  }
+
+  // ============================================
+  // STRATEGIC ADVISOR HUB - Advisors
+  // ============================================
+
+  async getAdvisors(search?: AdvisorSearch): Promise<Advisor[]> {
+    let query = db.select().from(advisors);
+
+    const conditions: any[] = [];
+
+    if (search?.city) {
+      conditions.push(ilike(advisors.city, `%${search.city}%`));
+    }
+    if (search?.state) {
+      conditions.push(eq(advisors.state, search.state.toUpperCase()));
+    }
+    if (search?.zipCode) {
+      conditions.push(eq(advisors.zipCode, search.zipCode));
+    }
+    if (search?.designation) {
+      conditions.push(eq(advisors.designation, search.designation));
+    }
+    if (search?.isVerifiedStrategist !== undefined) {
+      conditions.push(eq(advisors.isVerifiedStrategist, search.isVerifiedStrategist));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    // Apply limit and offset
+    const limit = search?.limit ?? 20;
+    const offset = search?.offset ?? 0;
+
+    return query.limit(limit).offset(offset);
+  }
+
+  async getAdvisorBySlug(slug: string): Promise<Advisor | undefined> {
+    const [advisor] = await db.select().from(advisors).where(eq(advisors.slug, slug));
+    return advisor;
+  }
+
+  async getAdvisorById(id: string): Promise<Advisor | undefined> {
+    const [advisor] = await db.select().from(advisors).where(eq(advisors.id, id));
+    return advisor;
+  }
+
+  async createAdvisor(insertAdvisor: InsertAdvisor): Promise<Advisor> {
+    const [advisor] = await db.insert(advisors).values(insertAdvisor).returning();
+    return advisor;
+  }
+
+  async updateAdvisor(id: string, update: Partial<Advisor>): Promise<Advisor> {
+    const [advisor] = await db
+      .update(advisors)
+      .set({ ...update, updatedAt: new Date() })
+      .where(eq(advisors.id, id))
+      .returning();
+    return advisor;
+  }
+
+  // ============================================
+  // STRATEGIC ADVISOR HUB - Leads
+  // ============================================
+
+  async createLead(insertLead: InsertLead): Promise<Lead> {
+    const [lead] = await db.insert(leads).values(insertLead).returning();
+    return lead;
+  }
+
+  async getLeadsByAdvisor(advisorId: string): Promise<Lead[]> {
+    return db.select().from(leads).where(eq(leads.advisorId, advisorId));
+  }
+
+  async getLeadsBySourcePage(sourcePage: string): Promise<Lead[]> {
+    return db.select().from(leads).where(eq(leads.sourcePage, sourcePage));
+  }
+
+  async getAllLeads(): Promise<Lead[]> {
+    return db.select().from(leads);
   }
 }
 

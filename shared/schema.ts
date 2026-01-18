@@ -1,6 +1,54 @@
-import { pgTable, text, serial, integer, decimal, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, decimal, boolean, timestamp, uuid, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// ============================================
+// STRATEGIC ADVISOR HUB - Directory Schema
+// ============================================
+
+export const advisors = pgTable("advisors", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  firmName: text("firm_name"),
+  designation: text("designation").notNull(), // 'CPA' | 'Wealth Manager' | 'CPA & Wealth Manager'
+  city: text("city").notNull(),
+  state: text("state").notNull(),
+  zipCode: text("zip_code").notNull(),
+  websiteUrl: text("website_url"),
+  linkedinUrl: text("linkedin_url"),
+  bio: text("bio"),
+  specialties: text("specialties").array(), // e.g., ['Tax Planning', 'Estate Planning', 'Reinsurance']
+  isVerifiedStrategist: boolean("is_verified_strategist").notNull().default(false),
+  slug: text("slug").notNull().unique(), // Format: name-city-specialty (e.g., john-smith-new-york-tax-planning)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Index on slug for fast lookups (SEO critical)
+  slugIdx: uniqueIndex("advisors_slug_idx").on(table.slug),
+  // Index for search queries
+  cityIdx: index("advisors_city_idx").on(table.city),
+  stateIdx: index("advisors_state_idx").on(table.state),
+  zipCodeIdx: index("advisors_zip_code_idx").on(table.zipCode),
+  designationIdx: index("advisors_designation_idx").on(table.designation),
+}));
+
+export const leads = pgTable("leads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  advisorId: uuid("advisor_id").references(() => advisors.id).notNull(),
+  userName: text("user_name").notNull(),
+  userEmail: text("user_email").notNull(),
+  message: text("message"),
+  sourcePage: text("source_page").notNull(), // Track which advisor profile generated the lead (slug or full URL)
+  sourceType: text("source_type").notNull().default('reinsurance_cta'), // 'reinsurance_cta' | 'contact_form' | 'schedule_call'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  advisorIdIdx: index("leads_advisor_id_idx").on(table.advisorId),
+  sourcePageIdx: index("leads_source_page_idx").on(table.sourcePage),
+}));
+
+// ============================================
+// DEALMACHINE - Original Schema
+// ============================================
 
 export const dealers = pgTable("dealers", {
   id: serial("id").primaryKey(),
@@ -174,3 +222,71 @@ export type OfferActivity = typeof offerActivities.$inferSelect;
 export type InsertOfferActivity = z.infer<typeof insertOfferActivitySchema>;
 export type AdminUser = typeof adminUsers.$inferSelect;
 export type InsertAdminUser = z.infer<typeof insertAdminSchema>;
+
+// ============================================
+// STRATEGIC ADVISOR HUB - Schemas & Types
+// ============================================
+
+// Helper to generate SEO-friendly slug: name-city-specialty
+export function generateAdvisorSlug(name: string, city: string, primarySpecialty?: string): string {
+  const parts = [name, city];
+  if (primarySpecialty) {
+    parts.push(primarySpecialty);
+  }
+  return parts
+    .join('-')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric with hyphens
+    .replace(/^-|-$/g, '')       // Remove leading/trailing hyphens
+    .substring(0, 100);          // Limit length for URL friendliness
+}
+
+export const insertAdvisorSchema = createInsertSchema(advisors).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  designation: z.enum(["CPA", "Wealth Manager", "CPA & Wealth Manager"], {
+    required_error: "Designation is required",
+  }),
+  city: z.string().min(2, "City is required"),
+  state: z.string().length(2, "State must be 2-letter abbreviation"),
+  zipCode: z.string().regex(/^\d{5}(-\d{4})?$/, "Invalid ZIP code format"),
+  websiteUrl: z.string().url().optional().or(z.literal('')),
+  linkedinUrl: z.string().url().optional().or(z.literal('')),
+  bio: z.string().max(2000, "Bio must be under 2000 characters").optional(),
+  specialties: z.array(z.string()).optional(),
+  isVerifiedStrategist: z.boolean().optional().default(false),
+  slug: z.string().min(5, "Slug is required").regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+});
+
+export const insertLeadSchema = createInsertSchema(leads).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  advisorId: z.string().uuid("Invalid advisor ID"),
+  userName: z.string().min(2, "Name is required"),
+  userEmail: z.string().email("Valid email is required"),
+  message: z.string().max(1000, "Message must be under 1000 characters").optional(),
+  sourcePage: z.string().min(1, "Source page is required"), // Track the advisor slug/URL
+  sourceType: z.enum(["reinsurance_cta", "contact_form", "schedule_call"]).optional().default("reinsurance_cta"),
+});
+
+// Search/filter schema for advisor queries
+export const advisorSearchSchema = z.object({
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zipCode: z.string().optional(),
+  designation: z.enum(["CPA", "Wealth Manager", "CPA & Wealth Manager"]).optional(),
+  specialty: z.string().optional(),
+  isVerifiedStrategist: z.boolean().optional(),
+  limit: z.number().min(1).max(100).optional().default(20),
+  offset: z.number().min(0).optional().default(0),
+});
+
+export type Advisor = typeof advisors.$inferSelect;
+export type InsertAdvisor = z.infer<typeof insertAdvisorSchema>;
+export type Lead = typeof leads.$inferSelect;
+export type InsertLead = z.infer<typeof insertLeadSchema>;
+export type AdvisorSearch = z.infer<typeof advisorSearchSchema>;

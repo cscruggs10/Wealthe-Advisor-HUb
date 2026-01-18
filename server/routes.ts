@@ -1,7 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { createServer } from "http";
 import { storage } from "./storage";
-import { insertVehicleSchema, insertOfferSchema, insertBuyCodeSchema, createInitialVehicleSchema, insertDealerSchema } from "@shared/schema";
+import {
+  insertVehicleSchema, insertOfferSchema, insertBuyCodeSchema, createInitialVehicleSchema, insertDealerSchema,
+  // Strategic Advisor Hub
+  insertAdvisorSchema, insertLeadSchema, advisorSearchSchema, generateAdvisorSlug
+} from "@shared/schema";
 import { sql } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
@@ -1035,6 +1039,217 @@ export async function registerRoutes(app: Express) {
     req.session.destroy(() => {
       res.sendStatus(200);
     });
+  });
+
+  // ============================================
+  // STRATEGIC ADVISOR HUB - Advisor Routes
+  // ============================================
+
+  // Search/list advisors with filters
+  app.get("/api/advisors", async (req, res) => {
+    try {
+      const searchParams = {
+        city: req.query.city as string | undefined,
+        state: req.query.state as string | undefined,
+        zipCode: req.query.zipCode as string | undefined,
+        designation: req.query.designation as "CPA" | "Wealth Manager" | "CPA & Wealth Manager" | undefined,
+        specialty: req.query.specialty as string | undefined,
+        isVerifiedStrategist: req.query.isVerifiedStrategist === 'true' ? true : undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
+      };
+
+      const result = advisorSearchSchema.safeParse(searchParams);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid search parameters", errors: result.error.format() });
+      }
+
+      const advisors = await storage.getAdvisors(result.data);
+      res.json(advisors);
+    } catch (error) {
+      console.error('Error fetching advisors:', error);
+      res.status(500).json({ message: "Failed to fetch advisors" });
+    }
+  });
+
+  // Get single advisor by slug (SEO-friendly URL)
+  app.get("/api/advisors/slug/:slug", async (req, res) => {
+    try {
+      const advisor = await storage.getAdvisorBySlug(req.params.slug);
+      if (!advisor) {
+        return res.status(404).json({ message: "Advisor not found" });
+      }
+      res.json(advisor);
+    } catch (error) {
+      console.error('Error fetching advisor:', error);
+      res.status(500).json({ message: "Failed to fetch advisor" });
+    }
+  });
+
+  // Get single advisor by ID
+  app.get("/api/advisors/:id", async (req, res) => {
+    try {
+      const advisor = await storage.getAdvisorById(req.params.id);
+      if (!advisor) {
+        return res.status(404).json({ message: "Advisor not found" });
+      }
+      res.json(advisor);
+    } catch (error) {
+      console.error('Error fetching advisor:', error);
+      res.status(500).json({ message: "Failed to fetch advisor" });
+    }
+  });
+
+  // Create new advisor
+  app.post("/api/advisors", async (req, res) => {
+    try {
+      // Auto-generate slug if not provided
+      let advisorData = { ...req.body };
+      if (!advisorData.slug && advisorData.name && advisorData.city) {
+        const primarySpecialty = advisorData.specialties?.[0];
+        advisorData.slug = generateAdvisorSlug(advisorData.name, advisorData.city, primarySpecialty);
+      }
+
+      const result = insertAdvisorSchema.safeParse(advisorData);
+      if (!result.success) {
+        return res.status(400).json({ message: "Validation failed", errors: result.error.format() });
+      }
+
+      const advisor = await storage.createAdvisor(result.data);
+      res.status(201).json(advisor);
+    } catch (error: any) {
+      console.error('Error creating advisor:', error);
+      // Handle unique constraint violation for slug
+      if (error.code === '23505' && error.constraint?.includes('slug')) {
+        return res.status(409).json({ message: "An advisor with this slug already exists. Try a different name or specialty." });
+      }
+      res.status(500).json({ message: "Failed to create advisor" });
+    }
+  });
+
+  // Update advisor
+  app.patch("/api/advisors/:id", async (req, res) => {
+    try {
+      const advisor = await storage.updateAdvisor(req.params.id, req.body);
+      if (!advisor) {
+        return res.status(404).json({ message: "Advisor not found" });
+      }
+      res.json(advisor);
+    } catch (error) {
+      console.error('Error updating advisor:', error);
+      res.status(500).json({ message: "Failed to update advisor" });
+    }
+  });
+
+  // ============================================
+  // STRATEGIC ADVISOR HUB - Lead Routes
+  // ============================================
+
+  // Create new lead (from Reinsurance CTA or contact form)
+  app.post("/api/leads", async (req, res) => {
+    try {
+      const result = insertLeadSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Validation failed", errors: result.error.format() });
+      }
+
+      // Verify advisor exists
+      const advisor = await storage.getAdvisorById(result.data.advisorId);
+      if (!advisor) {
+        return res.status(404).json({ message: "Advisor not found" });
+      }
+
+      const lead = await storage.createLead(result.data);
+
+      console.log(`New lead captured: ${lead.userName} from ${lead.sourcePage} (${lead.sourceType})`);
+
+      res.status(201).json({
+        success: true,
+        message: "Thank you for your interest. We'll be in touch shortly.",
+        leadId: lead.id
+      });
+    } catch (error) {
+      console.error('Error creating lead:', error);
+      res.status(500).json({ message: "Failed to submit. Please try again." });
+    }
+  });
+
+  // Get leads by advisor (admin/advisor dashboard)
+  app.get("/api/advisors/:id/leads", async (req, res) => {
+    try {
+      const leads = await storage.getLeadsByAdvisor(req.params.id);
+      res.json(leads);
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      res.status(500).json({ message: "Failed to fetch leads" });
+    }
+  });
+
+  // Get all leads (admin dashboard)
+  app.get("/api/leads", async (_req, res) => {
+    try {
+      const leads = await storage.getAllLeads();
+      res.json(leads);
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      res.status(500).json({ message: "Failed to fetch leads" });
+    }
+  });
+
+  // Get leads by source page (analytics)
+  app.get("/api/leads/source/:sourcePage", async (req, res) => {
+    try {
+      const leads = await storage.getLeadsBySourcePage(decodeURIComponent(req.params.sourcePage));
+      res.json(leads);
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      res.status(500).json({ message: "Failed to fetch leads" });
+    }
+  });
+
+  // ============================================
+  // SEO: Dynamic Meta Tags for Advisor Profiles
+  // ============================================
+
+  // This endpoint returns meta tag data for SSR/prerendering
+  app.get("/api/seo/advisor/:slug", async (req, res) => {
+    try {
+      const advisor = await storage.getAdvisorBySlug(req.params.slug);
+      if (!advisor) {
+        return res.status(404).json({ message: "Advisor not found" });
+      }
+
+      const title = `${advisor.name} - ${advisor.designation} in ${advisor.city}, ${advisor.state} | Strategic Advisor Hub`;
+      const description = advisor.bio
+        ? advisor.bio.substring(0, 160)
+        : `Find ${advisor.name}, a trusted ${advisor.designation} in ${advisor.city}, ${advisor.state}. ${advisor.specialties?.join(', ') || 'Tax planning, wealth management, and more.'}`;
+
+      res.json({
+        title,
+        description,
+        ogTitle: title,
+        ogDescription: description,
+        ogType: 'profile',
+        canonical: `/advisor/${advisor.slug}`,
+        structuredData: {
+          "@context": "https://schema.org",
+          "@type": "FinancialService",
+          "name": advisor.name,
+          "description": description,
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": advisor.city,
+            "addressRegion": advisor.state,
+            "postalCode": advisor.zipCode
+          },
+          "url": advisor.websiteUrl,
+          "sameAs": advisor.linkedinUrl ? [advisor.linkedinUrl] : undefined,
+        }
+      });
+    } catch (error) {
+      console.error('Error generating SEO data:', error);
+      res.status(500).json({ message: "Failed to generate SEO data" });
+    }
   });
 
   return httpServer;
