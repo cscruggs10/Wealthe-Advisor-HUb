@@ -85,24 +85,28 @@ export async function initializeServer() {
   }
 }
 
-// For local development
-if (process.env.NODE_ENV !== "production") {
-  (async () => {
-    try {
-      const server = await registerRoutes(app);
-      
-      if (app.get("env") === "development") {
-        const { setupVite } = await import("./vite");
-        await setupVite(app, server);
-      }
+// Start server (both development and production on Railway)
+(async () => {
+  try {
+    const server = await registerRoutes(app);
 
-      const port = 3002;
-      server.listen(port, '0.0.0.0', () => {
-        log(`Server running on http://localhost:${port}`);
-      });
-    } catch (error) {
-      console.error('Failed to start development server:', error);
-      process.exit(1);
+    // Development: use Vite middleware
+    if (process.env.NODE_ENV !== "production") {
+      const { setupVite } = await import("./vite");
+      await setupVite(app, server);
+    } else {
+      // Production (Railway): serve static files
+      const { serveStatic } = await import("./vite");
+      serveStatic(app);
     }
-  })();
-}
+
+    // Use Railway's PORT env var, fallback to 3002 for local dev
+    const port = parseInt(process.env.PORT || "3002", 10);
+    server.listen(port, '0.0.0.0', () => {
+      log(`Server running on port ${port} (${process.env.NODE_ENV || 'development'})`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+})();
