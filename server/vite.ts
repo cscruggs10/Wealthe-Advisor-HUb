@@ -78,7 +78,7 @@ export async function setupVite(app: Express, server: Server) {
 
   app.use(vite.middlewares);
 
-  app.use('*', async (req, res, next) => {
+  app.use('/{*splat}', async (req, res, next) => {
     const url = req.originalUrl;
     const userAgent = req.headers['user-agent'] || '';
     const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -121,7 +121,7 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  app.use('*', async (req, res) => {
+  app.use('/{*splat}', async (req, res) => {
     const url = req.originalUrl;
     const userAgent = req.headers['user-agent'] || '';
     const baseUrl = `${req.protocol}://${req.get('host')}`;
