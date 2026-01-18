@@ -112,9 +112,10 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, 'public');
+  // In production, the bundled server and static files are in the same directory
+  const distPath = __dirname;
 
-  if (!fs.existsSync(distPath)) {
+  if (!fs.existsSync(path.join(distPath, 'index.html'))) {
     throw new Error(`Build directory not found: ${distPath}`);
   }
 
