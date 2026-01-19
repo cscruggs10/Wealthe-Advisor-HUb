@@ -223,8 +223,8 @@ ${advisorSlugs.map(({ slug, updatedAt }) => `  <url>
   </url>`).join('\n')}
 </urlset>`;
 
-      res.set('Content-Type', 'application/xml');
-      res.send(xml);
+      res.header('Content-Type', 'application/xml; charset=utf-8');
+      res.status(200).send(xml);
     } catch (error) {
       console.error('Error generating sitemap:', error);
       res.status(500).send('Failed to generate sitemap');
