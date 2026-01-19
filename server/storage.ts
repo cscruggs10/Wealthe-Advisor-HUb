@@ -5,7 +5,7 @@ import {
   advisors, leads,
 } from '../shared/schema';
 import { db } from './db';
-import { eq, and, ilike, or } from 'drizzle-orm';
+import { eq, and, ilike, or, count, gte, sql } from 'drizzle-orm';
 
 class DatabaseStorage {
   // Advisors
@@ -88,6 +88,27 @@ class DatabaseStorage {
 
   async getAllLeads(): Promise<Lead[]> {
     return db.select().from(leads);
+  }
+
+  // Sitemap
+  async getAllAdvisorSlugs(): Promise<{ slug: string; updatedAt: Date }[]> {
+    return db.select({ slug: advisors.slug, updatedAt: advisors.updatedAt }).from(advisors);
+  }
+
+  // Stats
+  async getStats(): Promise<{ totalAdvisors: number; leadsToday: number; totalLeads: number }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [advisorCount] = await db.select({ count: count() }).from(advisors);
+    const [leadCount] = await db.select({ count: count() }).from(leads);
+    const [todayLeadCount] = await db.select({ count: count() }).from(leads).where(gte(leads.createdAt, today));
+
+    return {
+      totalAdvisors: advisorCount?.count || 0,
+      leadsToday: todayLeadCount?.count || 0,
+      totalLeads: leadCount?.count || 0,
+    };
   }
 }
 

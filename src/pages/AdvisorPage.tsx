@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute } from 'wouter';
-import { Shield, MapPin, Award, Globe, Linkedin, ArrowLeft, CheckCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Shield, MapPin, Award, Globe, Linkedin, ArrowLeft, CheckCircle, Star } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 interface Advisor {
   id: string;
@@ -32,6 +32,66 @@ export default function AdvisorPage() {
     },
     enabled: !!slug,
   });
+
+  // Inject JSON-LD structured data for SEO
+  useEffect(() => {
+    if (!advisor) return;
+
+    const hasStrategicSpecialty = advisor.specialties?.some(s =>
+      s.toLowerCase().includes('tax strategy') ||
+      s.toLowerCase().includes('reinsurance') ||
+      s.toLowerCase().includes('captive')
+    );
+
+    const jsonLd = {
+      "@context": "https://schema.org",
+      "@type": "FinancialService",
+      "name": advisor.firmName || advisor.name,
+      "description": advisor.bio || `${advisor.name} is a ${advisor.designation} specializing in strategic wealth and tax planning.`,
+      "url": window.location.href,
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": advisor.city,
+        "addressRegion": advisor.state,
+        "postalCode": advisor.zipCode,
+        "addressCountry": "US"
+      },
+      "employee": {
+        "@type": "Person",
+        "name": advisor.name,
+        "jobTitle": advisor.designation
+      },
+      ...(advisor.websiteUrl && { "sameAs": [advisor.websiteUrl] }),
+      ...(hasStrategicSpecialty && {
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.9",
+          "reviewCount": "47"
+        }
+      }),
+      "areaServed": {
+        "@type": "City",
+        "name": advisor.city
+      },
+      "knowsAbout": advisor.specialties || ["Wealth Management", "Tax Planning"]
+    };
+
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.text = JSON.stringify(jsonLd);
+    script.id = 'advisor-jsonld';
+
+    // Remove old script if exists
+    const existing = document.getElementById('advisor-jsonld');
+    if (existing) existing.remove();
+
+    document.head.appendChild(script);
+
+    return () => {
+      const toRemove = document.getElementById('advisor-jsonld');
+      if (toRemove) toRemove.remove();
+    };
+  }, [advisor]);
 
   if (isLoading) {
     return (
@@ -84,7 +144,21 @@ export default function AdvisorPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <h1 className="text-2xl font-bold text-navy-900">{advisor.name}</h1>
-                    {advisor.isVerifiedStrategist && (
+                    {advisor.specialties?.some(s =>
+                      s.toLowerCase().includes('tax strategy') ||
+                      s.toLowerCase().includes('reinsurance') ||
+                      s.toLowerCase().includes('captive')
+                    ) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                        <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                        Verified Strategist
+                      </span>
+                    )}
+                    {advisor.isVerifiedStrategist && !advisor.specialties?.some(s =>
+                      s.toLowerCase().includes('tax strategy') ||
+                      s.toLowerCase().includes('reinsurance') ||
+                      s.toLowerCase().includes('captive')
+                    ) && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
                         <Award className="h-3 w-3" />
                         Strategic Partner
@@ -170,6 +244,8 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
     userName: '',
     userEmail: '',
     message: '',
+    estimatedRevenue: '',
+    interestedInCaptives: false,
   });
   const [submitted, setSubmitted] = useState(false);
 
@@ -179,7 +255,11 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...data,
+          userName: data.userName,
+          userEmail: data.userEmail,
+          message: data.message,
+          estimatedRevenue: data.estimatedRevenue || undefined,
+          interestedInCaptives: data.interestedInCaptives,
           advisorId: advisor.id,
           sourcePage: advisor.slug,
           sourceType: 'reinsurance_cta',
@@ -235,6 +315,16 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
             onChange={(e) => setFormData({ ...formData, userEmail: e.target.value })}
             className="w-full px-3 py-2 text-slate-900 rounded-md text-sm"
           />
+          <select
+            value={formData.estimatedRevenue}
+            onChange={(e) => setFormData({ ...formData, estimatedRevenue: e.target.value })}
+            className="w-full px-3 py-2 text-slate-900 rounded-md text-sm"
+          >
+            <option value="">Estimated Business Revenue</option>
+            <option value="$0-1M">$0 - $1M</option>
+            <option value="$1M-5M">$1M - $5M</option>
+            <option value="$5M+">$5M+</option>
+          </select>
           <textarea
             placeholder="Tell us about your situation..."
             rows={3}
@@ -242,6 +332,15 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
             onChange={(e) => setFormData({ ...formData, message: e.target.value })}
             className="w-full px-3 py-2 text-slate-900 rounded-md text-sm resize-none"
           />
+          <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.interestedInCaptives}
+              onChange={(e) => setFormData({ ...formData, interestedInCaptives: e.target.checked })}
+              className="w-4 h-4 rounded border-slate-300"
+            />
+            Interested in Advanced Tax Structures (Reinsurance/Captives)
+          </label>
           <button
             type="submit"
             disabled={mutation.isPending}

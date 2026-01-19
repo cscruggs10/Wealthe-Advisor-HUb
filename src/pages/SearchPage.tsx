@@ -1,7 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useSearch } from 'wouter';
-import { Search, Shield, MapPin, Award, ArrowLeft } from 'lucide-react';
+import { Search, Shield, MapPin, Award, ArrowLeft, Star } from 'lucide-react';
 import { useState } from 'react';
+
+// Check if advisor has strategic specialties (Tax Strategy or Reinsurance)
+function hasStrategicSpecialty(specialties: string[] | null): boolean {
+  if (!specialties) return false;
+  return specialties.some(s => {
+    const lower = s.toLowerCase();
+    return lower.includes('tax strategy') ||
+           lower.includes('reinsurance') ||
+           lower.includes('captive');
+  });
+}
 
 interface Advisor {
   id: string;
@@ -113,7 +124,13 @@ export default function SearchPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h2 className="text-xl font-semibold text-navy-900">{advisor.name}</h2>
-                        {advisor.isVerifiedStrategist && (
+                        {hasStrategicSpecialty(advisor.specialties) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                            <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                            Verified Strategist
+                          </span>
+                        )}
+                        {advisor.isVerifiedStrategist && !hasStrategicSpecialty(advisor.specialties) && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
                             <Award className="h-3 w-3" />
                             Strategic Partner

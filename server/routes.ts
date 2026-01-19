@@ -170,8 +170,65 @@ export async function registerRoutes(app: Express) {
   });
 
   // ============================================
+  // ADMIN ROUTES
+  // ============================================
+
+  // Health/stats endpoint
+  app.get('/api/admin/stats', async (_req, res) => {
+    try {
+      const stats = await storage.getStats();
+      res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        stats: {
+          totalAdvisors: stats.totalAdvisors,
+          leadsToday: stats.leadsToday,
+          totalLeads: stats.totalLeads,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+      res.status(500).json({ status: 'ERROR', message: 'Failed to fetch stats' });
+    }
+  });
+
+  // ============================================
   // SEO ROUTES
   // ============================================
+
+  // Dynamic XML Sitemap
+  app.get('/sitemap.xml', async (req, res) => {
+    try {
+      const advisorSlugs = await storage.getAllAdvisorSlugs();
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/search</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+${advisorSlugs.map(({ slug, updatedAt }) => `  <url>
+    <loc>${baseUrl}/advisor/${slug}</loc>
+    <lastmod>${updatedAt.toISOString().split('T')[0]}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`).join('\n')}
+</urlset>`;
+
+      res.set('Content-Type', 'application/xml');
+      res.send(xml);
+    } catch (error) {
+      console.error('Error generating sitemap:', error);
+      res.status(500).send('Failed to generate sitemap');
+    }
+  });
 
   // SEO meta data for advisor
   app.get('/api/seo/advisor/:slug', async (req, res) => {
