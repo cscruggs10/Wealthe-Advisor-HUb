@@ -3,6 +3,8 @@ import { Route, Switch } from 'wouter';
 import HomePage from './pages/HomePage';
 import SearchPage from './pages/SearchPage';
 import AdvisorPage from './pages/AdvisorPage';
+import BlogPage from './pages/BlogPage';
+import BlogPostPage from './pages/BlogPostPage';
 
 const queryClient = new QueryClient();
 
@@ -14,6 +16,8 @@ function App() {
           <Route path="/" component={HomePage} />
           <Route path="/search" component={SearchPage} />
           <Route path="/advisor/:slug" component={AdvisorPage} />
+          <Route path="/blog" component={BlogPage} />
+          <Route path="/blog/:slug" component={BlogPostPage} />
           <Route>
             <div className="flex items-center justify-center min-h-screen">
               <h1 className="text-2xl text-slate-600">Page not found</h1>

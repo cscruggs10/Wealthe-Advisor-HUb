@@ -46,6 +46,22 @@ export const leads = pgTable("leads", {
   sourcePageIdx: index("leads_source_page_idx").on(table.sourcePage),
 }));
 
+export const blogPosts = pgTable("blog_posts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  slug: text("slug").notNull().unique(),
+  excerpt: text("excerpt").notNull(),
+  content: text("content").notNull(),
+  category: text("category").notNull().default('strategy'), // 'strategy' | 'tax' | 'wealth'
+  readTime: text("read_time").notNull().default('5 min read'),
+  isPublished: boolean("is_published").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  slugIdx: uniqueIndex("blog_posts_slug_idx").on(table.slug),
+  categoryIdx: index("blog_posts_category_idx").on(table.category),
+}));
+
 // ============================================
 // Validation Schemas
 // ============================================
@@ -104,9 +120,33 @@ export const advisorSearchSchema = z.object({
   offset: z.number().min(0).optional().default(0),
 });
 
+export const insertBlogPostSchema = createInsertSchema(blogPosts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  title: z.string().min(10, "Title must be at least 10 characters"),
+  slug: z.string().min(5).regex(/^[a-z0-9-]+$/),
+  excerpt: z.string().min(50).max(300),
+  content: z.string().min(500),
+  category: z.enum(["strategy", "tax", "wealth"]).optional().default("strategy"),
+  readTime: z.string().optional().default("5 min read"),
+  isPublished: z.boolean().optional().default(true),
+});
+
+export function generateBlogSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 100);
+}
+
 // Types
 export type Advisor = typeof advisors.$inferSelect;
 export type InsertAdvisor = z.infer<typeof insertAdvisorSchema>;
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = z.infer<typeof insertLeadSchema>;
 export type AdvisorSearch = z.infer<typeof advisorSearchSchema>;
+export type BlogPost = typeof blogPosts.$inferSelect;
+export type InsertBlogPost = z.infer<typeof insertBlogPostSchema>;

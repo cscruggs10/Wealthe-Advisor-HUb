@@ -2,10 +2,11 @@ import {
   type Advisor, type InsertAdvisor,
   type Lead, type InsertLead,
   type AdvisorSearch,
-  advisors, leads,
+  type BlogPost, type InsertBlogPost,
+  advisors, leads, blogPosts,
 } from '../shared/schema';
 import { db } from './db';
-import { eq, and, ilike, or, count, gte, sql } from 'drizzle-orm';
+import { eq, and, ilike, or, count, gte, sql, desc } from 'drizzle-orm';
 
 class DatabaseStorage {
   // Advisors
@@ -109,6 +110,40 @@ class DatabaseStorage {
       leadsToday: todayLeadCount?.count || 0,
       totalLeads: leadCount?.count || 0,
     };
+  }
+
+  // Blog Posts
+  async getBlogPosts(): Promise<BlogPost[]> {
+    return db.select().from(blogPosts).where(eq(blogPosts.isPublished, true)).orderBy(desc(blogPosts.createdAt));
+  }
+
+  async getBlogPostBySlug(slug: string): Promise<BlogPost | undefined> {
+    const [post] = await db.select().from(blogPosts).where(eq(blogPosts.slug, slug));
+    return post;
+  }
+
+  async createBlogPost(data: InsertBlogPost): Promise<BlogPost> {
+    const [post] = await db.insert(blogPosts).values(data).returning();
+    return post;
+  }
+
+  async getAllBlogSlugs(): Promise<{ slug: string; updatedAt: Date }[]> {
+    return db.select({ slug: blogPosts.slug, updatedAt: blogPosts.updatedAt }).from(blogPosts).where(eq(blogPosts.isPublished, true));
+  }
+
+  // Get random verified strategists (advisors with Tax Strategy or Reinsurance specialties)
+  async getRandomStrategists(limit: number = 3): Promise<Advisor[]> {
+    const allAdvisors = await db.select().from(advisors);
+    const strategists = allAdvisors.filter(a =>
+      a.specialties?.some(s =>
+        s.toLowerCase().includes('tax strategy') ||
+        s.toLowerCase().includes('reinsurance') ||
+        s.toLowerCase().includes('captive')
+      )
+    );
+    // Shuffle and take limit
+    const shuffled = strategists.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, limit);
   }
 }
 

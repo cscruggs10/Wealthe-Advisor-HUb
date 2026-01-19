@@ -14,6 +14,7 @@
     "db:studio": "drizzle-kit studio",
     "scraper": "tsx scripts/run-scraper.ts",
     "seed": "tsx scripts/seed.ts",
+    "generate-content": "tsx scripts/generate-blog-content.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },

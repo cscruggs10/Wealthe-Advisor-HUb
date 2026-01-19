@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { createServer } from 'http';
 import { storage } from './storage';
-import { insertAdvisorSchema, insertLeadSchema, advisorSearchSchema, generateAdvisorSlug } from '../shared/schema';
+import { insertAdvisorSchema, insertLeadSchema, advisorSearchSchema, generateAdvisorSlug, insertBlogPostSchema } from '../shared/schema';
 
 export async function registerRoutes(app: Express) {
   const httpServer = createServer(app);
@@ -170,6 +170,65 @@ export async function registerRoutes(app: Express) {
   });
 
   // ============================================
+  // BLOG ROUTES
+  // ============================================
+
+  // Get all blog posts
+  app.get('/api/blog', async (_req, res) => {
+    try {
+      const posts = await storage.getBlogPosts();
+      res.json(posts);
+    } catch (error) {
+      console.error('Error fetching blog posts:', error);
+      res.status(500).json({ message: 'Failed to fetch blog posts' });
+    }
+  });
+
+  // Get blog post by slug
+  app.get('/api/blog/:slug', async (req, res) => {
+    try {
+      const post = await storage.getBlogPostBySlug(req.params.slug);
+      if (!post) {
+        return res.status(404).json({ message: 'Blog post not found' });
+      }
+      res.json(post);
+    } catch (error) {
+      console.error('Error fetching blog post:', error);
+      res.status(500).json({ message: 'Failed to fetch blog post' });
+    }
+  });
+
+  // Get random strategists for featured section
+  app.get('/api/strategists/featured', async (_req, res) => {
+    try {
+      const strategists = await storage.getRandomStrategists(3);
+      res.json(strategists);
+    } catch (error) {
+      console.error('Error fetching strategists:', error);
+      res.status(500).json({ message: 'Failed to fetch strategists' });
+    }
+  });
+
+  // Create blog post (admin)
+  app.post('/api/blog', async (req, res) => {
+    try {
+      const result = insertBlogPostSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: 'Validation failed', errors: result.error.format() });
+      }
+
+      const post = await storage.createBlogPost(result.data);
+      res.status(201).json(post);
+    } catch (error: any) {
+      console.error('Error creating blog post:', error);
+      if (error.code === '23505') {
+        return res.status(409).json({ message: 'A blog post with this slug already exists' });
+      }
+      res.status(500).json({ message: 'Failed to create blog post' });
+    }
+  });
+
+  // ============================================
   // ADMIN ROUTES
   // ============================================
 
@@ -200,6 +259,7 @@ export async function registerRoutes(app: Express) {
   app.get('/sitemap.xml', async (req, res) => {
     try {
       const advisorSlugs = await storage.getAllAdvisorSlugs();
+      const blogSlugs = await storage.getAllBlogSlugs();
       const protocol = req.headers['x-forwarded-proto'] || req.protocol;
       const baseUrl = `${protocol}://${req.get('host')}`;
 
@@ -215,6 +275,17 @@ export async function registerRoutes(app: Express) {
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
+  <url>
+    <loc>${baseUrl}/blog</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+${blogSlugs.map(({ slug, updatedAt }) => `  <url>
+    <loc>${baseUrl}/blog/${slug}</loc>
+    <lastmod>${updatedAt.toISOString().split('T')[0]}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>`).join('\n')}
 ${advisorSlugs.map(({ slug, updatedAt }) => `  <url>
     <loc>${baseUrl}/advisor/${slug}</loc>
     <lastmod>${updatedAt.toISOString().split('T')[0]}</lastmod>
