@@ -200,7 +200,8 @@ export async function registerRoutes(app: Express) {
   app.get('/sitemap.xml', async (req, res) => {
     try {
       const advisorSlugs = await storage.getAllAdvisorSlugs();
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+      const baseUrl = `${protocol}://${req.get('host')}`;
 
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -238,7 +239,8 @@ ${advisorSlugs.map(({ slug, updatedAt }) => `  <url>
         return res.status(404).json({ message: 'Advisor not found' });
       }
 
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+      const baseUrl = `${protocol}://${req.get('host')}`;
       const title = `${advisor.name} - Strategic ${advisor.designation} in ${advisor.city} | Wealth Advisor Hub`;
       const description = advisor.bio
         ? advisor.bio.substring(0, 155) + '...'
