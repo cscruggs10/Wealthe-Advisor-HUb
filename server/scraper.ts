@@ -167,6 +167,11 @@ function calculatePriorityScore(advisor: ScrapedAdvisor): number {
     score += 10;
   }
 
+  // Fee-Only Fiduciary bonus (+10 for XYPN/NAPFA members)
+  if (searchText.includes('fee-only fiduciary') || searchText.includes('fee only fiduciary')) {
+    score += 10;
+  }
+
   return Math.min(score, 100);
 }
 
@@ -191,10 +196,80 @@ export interface ScrapeResult {
 /**
  * Detect which scraper to use based on URL
  */
-function detectSource(url: string): 'wealthtender' | 'samslist' | 'unknown' {
+function detectSource(url: string): 'wealthtender' | 'samslist' | 'xypn' | 'napfa' | 'unknown' {
   if (url.includes('wealthtender.com')) return 'wealthtender';
   if (url.includes('samslist.co')) return 'samslist';
+  if (url.includes('xyplanningnetwork.com')) return 'xypn';
+  if (url.includes('napfa.org')) return 'napfa';
   return 'unknown';
+}
+
+/**
+ * Parse XY Planning Network advisors (Fee-Only Fiduciaries)
+ * Format: [**Ideal Clients**..specialties..bio](profile_url) [Advisor Profile →](profile_url)
+ */
+function parseXYPNAdvisors(content: string, limit: number): ScrapedAdvisor[] {
+  const advisors: ScrapedAdvisor[] = [];
+  const seenNames = new Set<string>();
+
+  // Extract advisor blocks - each has ideal clients, specialties, bio, and profile link
+  // Pattern: [**Ideal Clients**...](profile_url)
+  const blockPattern = /\[\*\*Ideal Clients\*\*([^\]]+)\]\((https:\/\/connect\.xyplanningnetwork\.com\/find-an-advisor\/[^)]+)\)/g;
+
+  let match;
+  while ((match = blockPattern.exec(content)) !== null && advisors.length < limit) {
+    const blockContent = match[1];
+    const profileUrl = match[2];
+
+    // Extract name from URL (e.g., timothy-lapean-10758 -> Timothy Lapean)
+    const urlName = profileUrl.split('/').pop() || '';
+    const nameWithoutId = urlName.replace(/-\d+$/, ''); // Remove trailing ID
+    const name = nameWithoutId
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+      .replace(/\s+(Wellington|Taylor|Smith)\s+\1/i, ' $1'); // Remove duplicated last names
+
+    if (seenNames.has(name) || name.length < 3) continue;
+    seenNames.add(name);
+
+    // Extract specialties from the block (• Tax Planning, • Retirement Planning, etc.)
+    const specialtyMatches = blockContent.match(/• ([A-Za-z][^•\\]+)/g) || [];
+    const specialties = specialtyMatches
+      .map(s => s.replace('• ', '').trim())
+      .filter(s => s.length > 2 && s.length < 50)
+      .slice(0, 5);
+
+    // Add Fee-Only Fiduciary as first specialty (XYPN members are all fee-only)
+    if (!specialties.includes('Fee-Only Fiduciary')) {
+      specialties.unshift('Fee-Only Fiduciary');
+    }
+
+    // Extract bio - text after specialties
+    const bioMatch = blockContent.match(/\\n\\n([^\\]+)$/);
+    const bio = bioMatch ? bioMatch[1].trim() : undefined;
+
+    // Determine designation based on specialties
+    let designation = 'Wealth Manager';
+    const specialtiesLower = specialties.join(' ').toLowerCase();
+    if (specialtiesLower.includes('tax')) {
+      designation = 'CPA & Wealth Manager';
+    }
+
+    // XYPN members are nationwide, but we'll set a default location
+    advisors.push({
+      name,
+      designation,
+      city: 'Nationwide', // XYPN advisors typically serve nationwide
+      state: 'US',
+      zipCode: '00000',
+      websiteUrl: profileUrl,
+      bio: bio || `${name} is a Fee-Only Fiduciary financial advisor and member of the XY Planning Network.`,
+      specialties,
+    });
+  }
+
+  return advisors;
 }
 
 /**
@@ -417,6 +492,9 @@ export async function scrapeAdvisorsFromListingPage(url: string, limit: number =
       case 'samslist':
         advisors = parseSamslistAdvisors(content, limit);
         break;
+      case 'xypn':
+        advisors = parseXYPNAdvisors(content, limit);
+        break;
       default:
         // Try Wealthtender parser as default (more robust)
         advisors = parseWealthtenderAdvisors(content, limit);
@@ -547,6 +625,18 @@ const WEALTHTENDER_SOURCES = [
 ];
 
 /**
+ * XY Planning Network source URLs - Fee-Only Fiduciary advisors
+ * All XYPN members are fee-only fiduciaries
+ */
+const XYPN_SOURCES = [
+  'https://www.xyplanningnetwork.com/find-an-advisor/',
+  'https://www.xyplanningnetwork.com/find-an-advisor/?page=2',
+  'https://www.xyplanningnetwork.com/find-an-advisor/?page=3',
+  'https://www.xyplanningnetwork.com/find-an-advisor/?page=4',
+  'https://www.xyplanningnetwork.com/find-an-advisor/?page=5',
+];
+
+/**
  * Main scraping pipeline with multi-source support
  */
 export async function runScraperPipeline(
@@ -556,6 +646,7 @@ export async function runScraperPipeline(
 ): Promise<void> {
   const source = detectSource(baseUrl);
   const isWealthtender = source === 'wealthtender';
+  const isXYPN = source === 'xypn';
 
   console.log('='.repeat(60));
   console.log('Starting Advisor Scraper Pipeline');
@@ -570,14 +661,19 @@ export async function runScraperPipeline(
   let totalErrors = 0;
   let totalScraped = 0;
 
-  // For Wealthtender, use multiple source URLs since pagination is JS-based
-  const urls = isWealthtender
-    ? WEALTHTENDER_SOURCES.slice(0, maxPages)
-    : Array.from({ length: maxPages }, (_, i) => {
-        const url = new URL(baseUrl);
-        if (i > 0) url.searchParams.set('page', String(i + 1));
-        return url.toString();
-      });
+  // For Wealthtender and XYPN, use multiple source URLs since pagination is JS-based
+  let urls: string[];
+  if (isWealthtender) {
+    urls = WEALTHTENDER_SOURCES.slice(0, maxPages);
+  } else if (isXYPN) {
+    urls = XYPN_SOURCES.slice(0, maxPages);
+  } else {
+    urls = Array.from({ length: maxPages }, (_, i) => {
+      const url = new URL(baseUrl);
+      if (i > 0) url.searchParams.set('page', String(i + 1));
+      return url.toString();
+    });
+  }
 
   for (let i = 0; i < urls.length; i++) {
     const pageUrl = urls[i];
