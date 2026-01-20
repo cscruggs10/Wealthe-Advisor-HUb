@@ -34,7 +34,7 @@ export async function registerRoutes(app: Express) {
         designation: req.query.designation as any,
         query: req.query.query as string | undefined,
         isVerifiedStrategist: req.query.isVerifiedStrategist === 'true' ? true : undefined,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
       };
 
