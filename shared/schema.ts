@@ -118,7 +118,7 @@ export const advisorSearchSchema = z.object({
   designation: z.enum(["CPA", "Wealth Manager", "CPA & Wealth Manager"]).optional(),
   query: z.string().optional(),
   isVerifiedStrategist: z.boolean().optional(),
-  limit: z.number().min(1).max(100).optional().default(20),
+  limit: z.number().min(1).max(500).optional().default(200),
   offset: z.number().min(0).optional().default(0),
 });
 
