@@ -145,6 +145,121 @@ class DatabaseStorage {
     const shuffled = strategists.sort(() => Math.random() - 0.5);
     return shuffled.slice(0, limit);
   }
+
+  // ============================================
+  // pSEO Hub Page Methods
+  // ============================================
+
+  // Get all unique specialties with counts
+  async getUniqueSpecialties(): Promise<{ specialty: string; slug: string; count: number }[]> {
+    const allAdvisors = await db.select().from(advisors);
+    const specialtyMap = new Map<string, number>();
+
+    allAdvisors.forEach(advisor => {
+      advisor.specialties?.forEach(specialty => {
+        const normalized = specialty.trim();
+        specialtyMap.set(normalized, (specialtyMap.get(normalized) || 0) + 1);
+      });
+    });
+
+    return Array.from(specialtyMap.entries())
+      .map(([specialty, count]) => ({
+        specialty,
+        slug: specialty.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  // Get all unique cities with counts
+  async getUniqueCities(): Promise<{ city: string; state: string; slug: string; count: number }[]> {
+    const allAdvisors = await db.select().from(advisors);
+    const cityMap = new Map<string, { city: string; state: string; count: number }>();
+
+    allAdvisors.forEach(advisor => {
+      const key = `${advisor.city}-${advisor.state}`;
+      if (cityMap.has(key)) {
+        cityMap.get(key)!.count++;
+      } else {
+        cityMap.set(key, { city: advisor.city, state: advisor.state, count: 1 });
+      }
+    });
+
+    return Array.from(cityMap.values())
+      .map(({ city, state, count }) => ({
+        city,
+        state,
+        slug: `${city}-${state}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  // Get advisors by specialty
+  async getAdvisorsBySpecialty(specialtySlug: string): Promise<Advisor[]> {
+    const allAdvisors = await db.select().from(advisors);
+    return allAdvisors.filter(advisor =>
+      advisor.specialties?.some(s =>
+        s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === specialtySlug
+      )
+    );
+  }
+
+  // Get advisors by city
+  async getAdvisorsByCity(citySlug: string): Promise<Advisor[]> {
+    const allAdvisors = await db.select().from(advisors);
+    return allAdvisors.filter(advisor => {
+      const advisorCitySlug = `${advisor.city}-${advisor.state}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      return advisorCitySlug === citySlug;
+    });
+  }
+
+  // Get advisors by specialty AND city (Golden Page)
+  async getAdvisorsBySpecialtyAndCity(specialtySlug: string, citySlug: string): Promise<Advisor[]> {
+    const allAdvisors = await db.select().from(advisors);
+    return allAdvisors.filter(advisor => {
+      const advisorCitySlug = `${advisor.city}-${advisor.state}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const hasSpecialty = advisor.specialties?.some(s =>
+        s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === specialtySlug
+      );
+      return advisorCitySlug === citySlug && hasSpecialty;
+    });
+  }
+
+  // Get specialty info from slug
+  async getSpecialtyFromSlug(slug: string): Promise<{ specialty: string; count: number } | undefined> {
+    const specialties = await this.getUniqueSpecialties();
+    return specialties.find(s => s.slug === slug);
+  }
+
+  // Get city info from slug
+  async getCityFromSlug(slug: string): Promise<{ city: string; state: string; count: number } | undefined> {
+    const cities = await this.getUniqueCities();
+    return cities.find(c => c.slug === slug);
+  }
+
+  // Get all specialty/city combinations for sitemap (Golden Pages)
+  async getAllSpecialtyCityCombinations(): Promise<{ specialtySlug: string; citySlug: string; count: number }[]> {
+    const allAdvisors = await db.select().from(advisors);
+    const comboMap = new Map<string, number>();
+
+    allAdvisors.forEach(advisor => {
+      const citySlug = `${advisor.city}-${advisor.state}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      advisor.specialties?.forEach(specialty => {
+        const specialtySlug = specialty.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const key = `${specialtySlug}|${citySlug}`;
+        comboMap.set(key, (comboMap.get(key) || 0) + 1);
+      });
+    });
+
+    return Array.from(comboMap.entries())
+      .map(([key, count]) => {
+        const [specialtySlug, citySlug] = key.split('|');
+        return { specialtySlug, citySlug, count };
+      })
+      .filter(combo => combo.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }
 }
 
 export const storage = new DatabaseStorage();

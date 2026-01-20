@@ -229,6 +229,131 @@ export async function registerRoutes(app: Express) {
   });
 
   // ============================================
+  // pSEO DIRECTORY ROUTES
+  // ============================================
+
+  // Get all specialties (for directory index)
+  app.get('/api/directory/specialties', async (_req, res) => {
+    try {
+      const specialties = await storage.getUniqueSpecialties();
+      res.json(specialties);
+    } catch (error) {
+      console.error('Error fetching specialties:', error);
+      res.status(500).json({ message: 'Failed to fetch specialties' });
+    }
+  });
+
+  // Get all cities (for directory index)
+  app.get('/api/directory/cities', async (_req, res) => {
+    try {
+      const cities = await storage.getUniqueCities();
+      res.json(cities);
+    } catch (error) {
+      console.error('Error fetching cities:', error);
+      res.status(500).json({ message: 'Failed to fetch cities' });
+    }
+  });
+
+  // Get specialty hub data
+  app.get('/api/directory/specialty/:slug', async (req, res) => {
+    try {
+      const specialtyInfo = await storage.getSpecialtyFromSlug(req.params.slug);
+      if (!specialtyInfo) {
+        return res.status(404).json({ message: 'Specialty not found' });
+      }
+      const advisors = await storage.getAdvisorsBySpecialty(req.params.slug);
+      const cities = await storage.getUniqueCities();
+      // Filter cities that have advisors with this specialty
+      const relevantCities = cities.filter(city =>
+        advisors.some(a =>
+          `${a.city}-${a.state}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === city.slug
+        )
+      );
+      res.json({
+        specialty: specialtyInfo.specialty,
+        slug: req.params.slug,
+        advisorCount: advisors.length,
+        advisors,
+        cities: relevantCities,
+      });
+    } catch (error) {
+      console.error('Error fetching specialty hub:', error);
+      res.status(500).json({ message: 'Failed to fetch specialty data' });
+    }
+  });
+
+  // Get city hub data
+  app.get('/api/directory/location/:slug', async (req, res) => {
+    try {
+      const cityInfo = await storage.getCityFromSlug(req.params.slug);
+      if (!cityInfo) {
+        return res.status(404).json({ message: 'City not found' });
+      }
+      const advisors = await storage.getAdvisorsByCity(req.params.slug);
+      const specialties = await storage.getUniqueSpecialties();
+      // Filter specialties that have advisors in this city
+      const relevantSpecialties = specialties.filter(spec =>
+        advisors.some(a =>
+          a.specialties?.some(s =>
+            s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === spec.slug
+          )
+        )
+      );
+      res.json({
+        city: cityInfo.city,
+        state: cityInfo.state,
+        slug: req.params.slug,
+        advisorCount: advisors.length,
+        advisors,
+        specialties: relevantSpecialties,
+      });
+    } catch (error) {
+      console.error('Error fetching city hub:', error);
+      res.status(500).json({ message: 'Failed to fetch city data' });
+    }
+  });
+
+  // Get golden page data (specialty + city)
+  app.get('/api/directory/:specialty/:city', async (req, res) => {
+    try {
+      const specialtyInfo = await storage.getSpecialtyFromSlug(req.params.specialty);
+      const cityInfo = await storage.getCityFromSlug(req.params.city);
+
+      if (!specialtyInfo || !cityInfo) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
+
+      const advisors = await storage.getAdvisorsBySpecialtyAndCity(req.params.specialty, req.params.city);
+
+      res.json({
+        specialty: specialtyInfo.specialty,
+        specialtySlug: req.params.specialty,
+        city: cityInfo.city,
+        state: cityInfo.state,
+        citySlug: req.params.city,
+        advisorCount: advisors.length,
+        advisors,
+      });
+    } catch (error) {
+      console.error('Error fetching golden page:', error);
+      res.status(500).json({ message: 'Failed to fetch page data' });
+    }
+  });
+
+  // Get all directory routes for sitemap
+  app.get('/api/directory/sitemap-data', async (_req, res) => {
+    try {
+      const specialties = await storage.getUniqueSpecialties();
+      const cities = await storage.getUniqueCities();
+      const goldenPages = await storage.getAllSpecialtyCityCombinations();
+      res.json({ specialties, cities, goldenPages });
+    } catch (error) {
+      console.error('Error fetching sitemap data:', error);
+      res.status(500).json({ message: 'Failed to fetch sitemap data' });
+    }
+  });
+
+  // ============================================
   // ADMIN ROUTES
   // ============================================
 
@@ -260,8 +385,12 @@ export async function registerRoutes(app: Express) {
     try {
       const advisorSlugs = await storage.getAllAdvisorSlugs();
       const blogSlugs = await storage.getAllBlogSlugs();
+      const specialties = await storage.getUniqueSpecialties();
+      const cities = await storage.getUniqueCities();
+      const goldenPages = await storage.getAllSpecialtyCityCombinations();
       const protocol = req.headers['x-forwarded-proto'] || req.protocol;
       const baseUrl = `${protocol}://${req.get('host')}`;
+      const today = new Date().toISOString().split('T')[0];
 
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -291,6 +420,24 @@ ${advisorSlugs.map(({ slug, updatedAt }) => `  <url>
     <lastmod>${updatedAt.toISOString().split('T')[0]}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+  </url>`).join('\n')}
+${specialties.map(({ slug }) => `  <url>
+    <loc>${baseUrl}/directory/${slug}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>`).join('\n')}
+${cities.map(({ slug }) => `  <url>
+    <loc>${baseUrl}/directory/location/${slug}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>`).join('\n')}
+${goldenPages.map(({ specialtySlug, citySlug }) => `  <url>
+    <loc>${baseUrl}/directory/${specialtySlug}/${citySlug}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
   </url>`).join('\n')}
 </urlset>`;
 
