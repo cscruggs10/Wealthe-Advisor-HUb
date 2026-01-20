@@ -58,9 +58,13 @@ export default function SearchPage() {
       <header className="bg-navy-900 text-white">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
-            <Shield className="h-8 w-8 text-emerald-400" />
-            <span className="text-xl font-bold">Wealth Advisor Hub</span>
+            <Shield className="h-8 w-8 text-amber-400" />
+            <span className="text-xl font-bold tracking-tight">The Alpha Directory</span>
           </a>
+          <nav className="flex items-center gap-6">
+            <a href="/search" className="text-amber-400 font-medium">Find Advisors</a>
+            <a href="/blog" className="text-slate-300 hover:text-white transition-colors">Financial Journal</a>
+          </nav>
         </div>
       </header>
 

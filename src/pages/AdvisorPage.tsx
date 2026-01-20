@@ -120,9 +120,13 @@ export default function AdvisorPage() {
       <header className="bg-navy-900 text-white">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
-            <Shield className="h-8 w-8 text-emerald-400" />
-            <span className="text-xl font-bold">Wealth Advisor Hub</span>
+            <Shield className="h-8 w-8 text-amber-400" />
+            <span className="text-xl font-bold tracking-tight">The Alpha Directory</span>
           </a>
+          <nav className="flex items-center gap-6">
+            <a href="/search" className="text-slate-300 hover:text-white transition-colors">Find Advisors</a>
+            <a href="/blog" className="text-slate-300 hover:text-white transition-colors">Financial Journal</a>
+          </nav>
         </div>
       </header>
 
@@ -246,6 +250,7 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
     message: '',
     estimatedRevenue: '',
     interestedInCaptives: false,
+    hasStrategicCpa: '',
   });
   const [submitted, setSubmitted] = useState(false);
 
@@ -260,6 +265,7 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
           message: data.message,
           estimatedRevenue: data.estimatedRevenue || undefined,
           interestedInCaptives: data.interestedInCaptives,
+          hasStrategicCpa: data.hasStrategicCpa || undefined,
           advisorId: advisor.id,
           sourcePage: advisor.slug,
           sourceType: 'reinsurance_cta',
@@ -324,6 +330,16 @@ function LeadForm({ advisor }: { advisor: Advisor }) {
             <option value="$0-1M">$0 - $1M</option>
             <option value="$1M-5M">$1M - $5M</option>
             <option value="$5M+">$5M+</option>
+          </select>
+          <select
+            value={formData.hasStrategicCpa}
+            onChange={(e) => setFormData({ ...formData, hasStrategicCpa: e.target.value })}
+            className="w-full px-3 py-2 text-slate-900 rounded-md text-sm"
+          >
+            <option value="">Working with a Strategic CPA?</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+            <option value="looking-to-replace">Looking to Replace</option>
           </select>
           <textarea
             placeholder="Tell us about your situation..."

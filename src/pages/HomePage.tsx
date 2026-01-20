@@ -20,14 +20,13 @@ export default function HomePage() {
       {/* Header */}
       <header className="bg-navy-900 text-white">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Shield className="h-8 w-8 text-emerald-400" />
-            <span className="text-xl font-bold">Wealth Advisor Hub</span>
-          </div>
+          <a href="/" className="flex items-center gap-2">
+            <Shield className="h-8 w-8 text-amber-400" />
+            <span className="text-xl font-bold tracking-tight">The Alpha Directory</span>
+          </a>
           <nav className="hidden md:flex items-center gap-6 text-sm">
-            <a href="/search" className="hover:text-emerald-400 transition-colors">Find Advisors</a>
-            <a href="#" className="hover:text-emerald-400 transition-colors">For Advisors</a>
-            <a href="#" className="hover:text-emerald-400 transition-colors">Resources</a>
+            <a href="/search" className="hover:text-amber-400 transition-colors">Find Advisors</a>
+            <a href="/blog" className="hover:text-amber-400 transition-colors">Financial Journal</a>
           </nav>
         </div>
       </header>
@@ -35,9 +34,12 @@ export default function HomePage() {
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-navy-900 via-navy-800 to-navy-900 text-white py-20 px-4">
         <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-4 py-2 rounded-full mb-6">
+            <span className="text-amber-400 font-medium text-sm">Connecting Business Owners with Strategic CPAs and Wealth Managers</span>
+          </div>
           <h1 className="text-4xl md:text-5xl font-bold mb-6">
-            Find a Strategic Advisor<br />
-            <span className="text-emerald-400">Who Thinks Bigger</span>
+            Find Your Alpha Advisor<br />
+            <span className="text-amber-400">Who Thinks Bigger</span>
           </h1>
           <p className="text-xl text-slate-300 mb-10 max-w-2xl mx-auto">
             Connect with verified CPAs and Wealth Managers who specialize in proactive tax strategies,
@@ -141,11 +143,11 @@ export default function HomePage() {
       <footer className="bg-slate-900 text-slate-400 py-12 px-4">
         <div className="max-w-6xl mx-auto text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Shield className="h-6 w-6 text-emerald-400" />
-            <span className="text-lg font-semibold text-white">Wealth Advisor Hub</span>
+            <Shield className="h-6 w-6 text-amber-400" />
+            <span className="text-lg font-semibold text-white">The Alpha Directory</span>
           </div>
           <p className="text-sm">
-            © 2024 Wealth Advisor Hub. Connecting you with strategic financial advisors.
+            © 2024 The Alpha Directory. Connecting business owners with strategic financial advisors.
           </p>
         </div>
       </footer>

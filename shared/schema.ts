@@ -38,6 +38,7 @@ export const leads = pgTable("leads", {
   message: text("message"),
   estimatedRevenue: text("estimated_revenue"), // '$0-1M' | '$1M-5M' | '$5M+'
   interestedInCaptives: boolean("interested_in_captives").default(false),
+  hasStrategicCpa: text("has_strategic_cpa"), // 'yes' | 'no' | 'looking-to-replace'
   sourcePage: text("source_page").notNull(),
   sourceType: text("source_type").notNull().default('reinsurance_cta'),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -105,6 +106,7 @@ export const insertLeadSchema = createInsertSchema(leads).omit({
   message: z.string().max(1000).optional(),
   estimatedRevenue: z.enum(["$0-1M", "$1M-5M", "$5M+"]).optional(),
   interestedInCaptives: z.boolean().optional().default(false),
+  hasStrategicCpa: z.enum(["yes", "no", "looking-to-replace"]).optional(),
   sourcePage: z.string().min(1),
   sourceType: z.enum(["reinsurance_cta", "contact_form", "schedule_call"]).optional().default("reinsurance_cta"),
 });

@@ -135,15 +135,15 @@ export default function BlogPostPage() {
       <header className="bg-navy-900 text-white">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
-            <Shield className="h-8 w-8 text-emerald-400" />
-            <span className="text-xl font-bold">Wealth Advisor Hub</span>
+            <Shield className="h-8 w-8 text-amber-400" />
+            <span className="text-xl font-bold tracking-tight">The Alpha Directory</span>
           </a>
           <nav className="flex items-center gap-6">
             <a href="/search" className="text-slate-300 hover:text-white transition-colors">
               Find Advisors
             </a>
-            <a href="/blog" className="text-emerald-400 font-medium">
-              Insights
+            <a href="/blog" className="text-amber-400 font-medium">
+              Financial Journal
             </a>
           </nav>
         </div>
@@ -182,15 +182,15 @@ export default function BlogPostPage() {
           />
         </article>
 
-        {/* Featured Advisors Section */}
+        {/* Featured Alpha Advisors Section */}
         {featuredAdvisors && featuredAdvisors.length > 0 && (
           <section className="bg-gradient-to-br from-navy-900 to-navy-800 rounded-xl p-8 text-white">
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex items-center gap-2 mb-2">
               <Star className="h-6 w-6 text-amber-400 fill-amber-400" />
-              <h2 className="text-2xl font-bold">Featured Verified Strategists</h2>
+              <h2 className="text-2xl font-serif font-bold">Featured Alpha Advisors</h2>
             </div>
             <p className="text-slate-300 mb-6">
-              Connect with advisors who specialize in the strategies discussed in this article.
+              Connect with strategic advisors who specialize in the strategies discussed in this article.
             </p>
 
             <div className="grid md:grid-cols-3 gap-4 mb-6">
@@ -198,10 +198,10 @@ export default function BlogPostPage() {
                 <a
                   key={advisor.id}
                   href={`/advisor/${advisor.slug}`}
-                  className="bg-white/10 backdrop-blur rounded-lg p-4 hover:bg-white/20 transition-colors"
+                  className="bg-white/10 backdrop-blur rounded-lg p-4 hover:bg-white/20 transition-colors border border-amber-500/20"
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold text-sm">
+                    <div className="w-10 h-10 bg-amber-500/20 rounded-full flex items-center justify-center text-amber-400 font-bold text-sm">
                       {advisor.name.split(' ').map(n => n[0]).join('')}
                     </div>
                     <div>
@@ -216,7 +216,7 @@ export default function BlogPostPage() {
                   {advisor.specialties && advisor.specialties.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {advisor.specialties.slice(0, 2).map((s, i) => (
-                        <span key={i} className="px-2 py-0.5 text-xs bg-white/10 rounded text-slate-300">
+                        <span key={i} className="px-2 py-0.5 text-xs bg-amber-500/20 rounded text-amber-200">
                           {s}
                         </span>
                       ))}
@@ -227,10 +227,10 @@ export default function BlogPostPage() {
             </div>
 
             <a
-              href="/search?isVerifiedStrategist=true"
-              className="inline-flex items-center gap-2 text-emerald-400 font-medium hover:text-emerald-300 transition-colors"
+              href="/search"
+              className="inline-flex items-center gap-2 text-amber-400 font-medium hover:text-amber-300 transition-colors"
             >
-              View All Verified Strategists
+              View All Alpha Advisors
               <ArrowRight className="h-4 w-4" />
             </a>
           </section>
