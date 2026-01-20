@@ -1,6 +1,17 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy initialization to avoid crashing on startup if API key is missing
+let resend: Resend | null = null;
+
+function getResendClient(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
+    return null;
+  }
+  if (!resend) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resend;
+}
 
 interface LeadNotificationData {
   // Lead info
@@ -182,7 +193,13 @@ export async function sendLeadNotification(data: LeadNotificationData): Promise<
 `;
 
   try {
-    const { data: emailResult, error } = await resend.emails.send({
+    const client = getResendClient();
+    if (!client) {
+      console.warn('[Email] Resend client not available');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const { data: emailResult, error } = await client.emails.send({
       from: 'The Alpha Directory <notifications@resend.dev>',
       to: notificationEmail,
       subject: `${isHotLead ? '🔥 ' : ''}New Lead: ${data.userName} (${data.estimatedRevenue || 'Revenue N/A'})`,
