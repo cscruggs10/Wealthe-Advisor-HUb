@@ -43,7 +43,7 @@ class DatabaseStorage {
       query = query.where(and(...conditions)) as any;
     }
 
-    const limit = search?.limit ?? 20;
+    const limit = search?.limit ?? 200;
     const offset = search?.offset ?? 0;
 
     return query.limit(limit).offset(offset);
