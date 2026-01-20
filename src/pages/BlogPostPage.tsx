@@ -73,6 +73,15 @@ export default function BlogPostPage() {
 
     document.head.appendChild(script);
 
+    // Add canonical tag
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', `${window.location.origin}/blog/${post.slug}`);
+
     return () => {
       const toRemove = document.getElementById('blog-jsonld');
       if (toRemove) toRemove.remove();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Shield, TrendingUp, Users, MapPin, ArrowRight } from 'lucide-react';
@@ -24,6 +24,17 @@ export default function HomePage() {
       return res.json();
     },
   });
+
+  // Add canonical tag for homepage
+  useEffect(() => {
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', window.location.origin);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

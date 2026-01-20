@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Shield, Clock, ArrowRight, Newspaper } from 'lucide-react';
 
 interface BlogPost {
@@ -20,6 +21,17 @@ export default function BlogPage() {
       return res.json();
     },
   });
+
+  // Add canonical tag for blog listing page
+  useEffect(() => {
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', `${window.location.origin}/blog`);
+  }, []);
 
   const categoryLabels: Record<string, string> = {
     strategy: 'Tax Strategy',

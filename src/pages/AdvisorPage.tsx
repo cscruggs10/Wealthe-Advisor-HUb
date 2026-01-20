@@ -105,6 +105,15 @@ export default function AdvisorPage() {
 
     document.head.appendChild(script);
 
+    // Add canonical tag
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', `${window.location.origin}/advisor/${advisor.slug}`);
+
     return () => {
       const toRemove = document.getElementById('advisor-jsonld');
       if (toRemove) toRemove.remove();

@@ -104,6 +104,77 @@ export interface ScrapedAdvisor {
   bio?: string;
   specialties?: string[];
   profileUrl?: string;
+  priorityScore?: number; // Higher = more valuable for our niche
+}
+
+// Priority keywords for advisor scoring
+const HIGH_PRIORITY_KEYWORDS = [
+  'tax', 'captive', 'reinsurance', '831(b)', '831b',
+  'high net worth', 'hnw', 'uhnw', 'ultra high',
+  'business owner', 'entrepreneur', 'succession',
+  'estate planning', 'wealth preservation', 'tax optimization',
+  'strategic', 'proactive', 'advanced tax'
+];
+
+const MEDIUM_PRIORITY_KEYWORDS = [
+  'cpa', 'accounting', 'financial planning', 'wealth management',
+  'investment', 'retirement', 'executive', 'corporate'
+];
+
+/**
+ * Calculate priority score for an advisor (0-100)
+ * Higher scores = more valuable for our Tax/Captive/HNW niche
+ */
+function calculatePriorityScore(advisor: ScrapedAdvisor): number {
+  let score = 0;
+  const searchText = [
+    advisor.name,
+    advisor.firmName,
+    advisor.bio,
+    advisor.designation,
+    ...(advisor.specialties || [])
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  // High priority keywords (10 points each, max 50)
+  for (const keyword of HIGH_PRIORITY_KEYWORDS) {
+    if (searchText.includes(keyword)) {
+      score += 10;
+    }
+  }
+  score = Math.min(score, 50);
+
+  // Medium priority keywords (5 points each, max 25)
+  let mediumScore = 0;
+  for (const keyword of MEDIUM_PRIORITY_KEYWORDS) {
+    if (searchText.includes(keyword)) {
+      mediumScore += 5;
+    }
+  }
+  score += Math.min(mediumScore, 25);
+
+  // Bonus for CPA designation
+  if (advisor.designation.includes('CPA')) {
+    score += 15;
+  }
+
+  // Bonus for having specialties
+  if (advisor.specialties && advisor.specialties.length > 0) {
+    score += 10;
+  }
+
+  return Math.min(score, 100);
+}
+
+/**
+ * Sort advisors by priority (highest first)
+ */
+function sortByPriority(advisors: ScrapedAdvisor[]): ScrapedAdvisor[] {
+  return advisors
+    .map(advisor => ({
+      ...advisor,
+      priorityScore: calculatePriorityScore(advisor)
+    }))
+    .sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0));
 }
 
 export interface ScrapeResult {
@@ -398,14 +469,23 @@ export async function runScraperPipeline(listingUrl: string, limit: number = 3):
     return;
   }
 
-  console.log(`\nFound ${scrapeResult.advisors.length} advisors to process\n`);
+  console.log(`\nFound ${scrapeResult.advisors.length} advisors to process`);
 
-  // Step 2: Process each advisor
+  // Step 2: Sort advisors by priority (Tax/Captive/HNW keywords first)
+  const prioritizedAdvisors = sortByPriority(scrapeResult.advisors);
+
+  console.log('\nPriority-sorted advisors:');
+  prioritizedAdvisors.forEach((a, i) => {
+    console.log(`  ${i + 1}. ${a.name} (score: ${a.priorityScore})`);
+  });
+  console.log('');
+
+  // Step 3: Process each advisor (highest priority first)
   let successCount = 0;
   let skipCount = 0;
   let errorCount = 0;
 
-  for (const advisor of scrapeResult.advisors) {
+  for (const advisor of prioritizedAdvisors) {
     console.log('-'.repeat(40));
     console.log(`Processing: ${advisor.name}`);
 

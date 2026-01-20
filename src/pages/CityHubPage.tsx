@@ -138,6 +138,15 @@ export default function CityHubPage() {
     }
     metaTag.setAttribute('content', metaDescription);
 
+    // Add canonical tag
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', `${window.location.origin}/directory/location/${data.slug}`);
+
     return () => {
       document.getElementById('city-hub-jsonld')?.remove();
       document.getElementById('breadcrumb-jsonld')?.remove();

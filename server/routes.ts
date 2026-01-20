@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { createServer } from 'http';
 import { storage } from './storage';
 import { insertAdvisorSchema, insertLeadSchema, advisorSearchSchema, generateAdvisorSlug, insertBlogPostSchema } from '../shared/schema';
+import { sendLeadNotification } from './email';
 
 export async function registerRoutes(app: Express) {
   const httpServer = createServer(app);
@@ -135,6 +136,21 @@ export async function registerRoutes(app: Express) {
 
       const lead = await storage.createLead(result.data);
       console.log(`New lead: ${lead.userName} from ${lead.sourcePage} (${lead.sourceType})`);
+
+      // Send email notification (non-blocking)
+      sendLeadNotification({
+        userName: lead.userName,
+        userEmail: lead.userEmail,
+        message: lead.message || undefined,
+        estimatedRevenue: lead.estimatedRevenue || undefined,
+        interestedInCaptives: lead.interestedInCaptives || false,
+        hasStrategicCpa: lead.hasStrategicCpa || undefined,
+        advisorName: advisor.name,
+        advisorDesignation: advisor.designation,
+        advisorCity: advisor.city,
+        advisorState: advisor.state,
+        createdAt: lead.createdAt,
+      }).catch(err => console.error('[Email] Notification error:', err));
 
       res.status(201).json({
         success: true,

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useSearch } from 'wouter';
 import { Search, Shield, MapPin, Award, ArrowLeft, Star } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Check if advisor has strategic specialties (Tax Strategy or Reinsurance)
 function hasStrategicSpecialty(specialties: string[] | null): boolean {
@@ -43,6 +43,17 @@ export default function SearchPage() {
       return res.json();
     },
   });
+
+  // Add canonical tag for search page (without query params to avoid duplicate content)
+  useEffect(() => {
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', `${window.location.origin}/search`);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

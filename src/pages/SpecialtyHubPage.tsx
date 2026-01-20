@@ -130,6 +130,15 @@ export default function SpecialtyHubPage() {
     }
     metaTag.setAttribute('content', metaDescription);
 
+    // Add canonical tag
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalLink);
+    }
+    canonicalLink.setAttribute('href', `${window.location.origin}/directory/${data.slug}`);
+
     return () => {
       document.getElementById('specialty-hub-jsonld')?.remove();
       document.getElementById('breadcrumb-jsonld')?.remove();

@@ -9,6 +9,20 @@ export interface RewrittenBio {
   specialties: string[];
 }
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
+/**
+ * Sleep utility for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Rewrite bio with retry logic
+ */
 export async function rewriteBioForSEO(
   originalBio: string,
   advisorName: string,
@@ -19,6 +33,39 @@ export async function rewriteBioForSEO(
     throw new Error('ANTHROPIC_API_KEY is required');
   }
 
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`  [AI] Rewrite attempt ${attempt}/${MAX_RETRIES}...`);
+      const result = await performRewrite(originalBio, advisorName, designation, location);
+      console.log(`  [AI] Rewrite successful on attempt ${attempt}`);
+      return result;
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`  [AI] Attempt ${attempt} failed: ${(error as Error).message}`);
+
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_DELAY_MS * attempt; // Exponential backoff
+        console.log(`  [AI] Retrying in ${delay}ms...`);
+        await sleep(delay);
+      }
+    }
+  }
+
+  // All retries failed
+  throw lastError || new Error('All rewrite attempts failed');
+}
+
+/**
+ * Internal rewrite function (single attempt)
+ */
+async function performRewrite(
+  originalBio: string,
+  advisorName: string,
+  designation: string,
+  location: string
+): Promise<RewrittenBio> {
   const prompt = `You are an SEO content specialist for a financial advisor directory focused on Strategic Wealth and Tax Planning.
 
 Rewrite the following advisor bio to be:
