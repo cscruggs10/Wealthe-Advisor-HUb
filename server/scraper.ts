@@ -5,6 +5,80 @@ import { eq, or } from 'drizzle-orm';
 import { advisors, generateAdvisorSlug } from '../shared/schema';
 import { rewriteBioForSEO, generateFallbackBio } from './ai-rewriter';
 
+// State abbreviation to full name mapping
+const STATE_NAMES: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri',
+  MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+  OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  DC: 'District of Columbia',
+};
+
+// Common city name normalizations
+const CITY_NORMALIZATIONS: Record<string, string> = {
+  'nyc': 'New York',
+  'ny': 'New York',
+  'la': 'Los Angeles',
+  'sf': 'San Francisco',
+  'dc': 'Washington',
+  'philly': 'Philadelphia',
+  'vegas': 'Las Vegas',
+  'nola': 'New Orleans',
+  'chi': 'Chicago',
+  'atl': 'Atlanta',
+  'dallas-fort worth': 'Dallas',
+  'dfw': 'Dallas',
+};
+
+/**
+ * Normalize city name for clean SEO URLs
+ */
+function normalizeCity(city: string): string {
+  const lowerCity = city.toLowerCase().trim();
+
+  // Check for common abbreviations/nicknames
+  if (CITY_NORMALIZATIONS[lowerCity]) {
+    return CITY_NORMALIZATIONS[lowerCity];
+  }
+
+  // Proper case the city name
+  return city.trim()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+    .replace(/\s+/g, ' '); // Remove extra spaces
+}
+
+/**
+ * Normalize state to 2-letter abbreviation
+ */
+function normalizeState(state: string): string {
+  const upperState = state.toUpperCase().trim();
+
+  // If already a valid abbreviation, return it
+  if (STATE_NAMES[upperState]) {
+    return upperState;
+  }
+
+  // Check if it's a full state name and convert to abbreviation
+  const entry = Object.entries(STATE_NAMES).find(
+    ([_, name]) => name.toUpperCase() === upperState
+  );
+
+  if (entry) {
+    return entry[0];
+  }
+
+  // Return as-is if can't normalize
+  return upperState.substring(0, 2);
+}
+
 // Initialize Firecrawl
 const firecrawl = new FirecrawlClient({
   apiKey: process.env.FIRECRAWL_API_KEY || '',
@@ -241,8 +315,14 @@ export async function checkDuplicate(websiteUrl?: string, slug?: string): Promis
  */
 export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<{ success: boolean; slug?: string; error?: string }> {
   try {
-    // Generate slug
-    const slug = generateAdvisorSlug(scraped.name, scraped.city, scraped.specialties?.[0] || scraped.designation);
+    // Normalize city and state for clean SEO URLs
+    const normalizedCity = normalizeCity(scraped.city);
+    const normalizedState = normalizeState(scraped.state);
+
+    console.log(`  Location: ${scraped.city}, ${scraped.state} -> ${normalizedCity}, ${normalizedState}`);
+
+    // Generate slug with normalized location
+    const slug = generateAdvisorSlug(scraped.name, normalizedCity, scraped.specialties?.[0] || scraped.designation);
 
     // Check for duplicates
     const isDuplicate = await checkDuplicate(scraped.websiteUrl, slug);
@@ -257,14 +337,14 @@ export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<
         scraped.bio || '',
         scraped.name,
         scraped.designation,
-        `${scraped.city}, ${scraped.state}`
+        `${normalizedCity}, ${normalizedState}`
       );
     } catch (aiError) {
       console.warn(`AI rewrite failed, using fallback: ${aiError}`);
       rewrittenData = await generateFallbackBio(
         scraped.name,
         scraped.designation,
-        `${scraped.city}, ${scraped.state}`,
+        `${normalizedCity}, ${normalizedState}`,
         scraped.firmName
       );
     }
@@ -277,13 +357,13 @@ export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<
       ])
     ].slice(0, 6);
 
-    // Insert into database
+    // Insert into database with normalized location data
     await db.insert(advisors).values({
       name: scraped.name,
       firmName: scraped.firmName,
       designation: scraped.designation,
-      city: scraped.city,
-      state: scraped.state,
+      city: normalizedCity,
+      state: normalizedState,
       zipCode: scraped.zipCode,
       websiteUrl: scraped.websiteUrl,
       linkedinUrl: scraped.linkedinUrl,

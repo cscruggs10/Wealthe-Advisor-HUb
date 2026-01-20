@@ -1,11 +1,29 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
-import { Search, Shield, TrendingUp, Users } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Search, Shield, TrendingUp, Users, MapPin, ArrowRight } from 'lucide-react';
+
+interface CityData {
+  city: string;
+  state: string;
+  slug: string;
+  count: number;
+}
 
 export default function HomePage() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [designation, setDesignation] = useState('');
+
+  // Fetch top cities for Browse Directory section
+  const { data: topCities } = useQuery<CityData[]>({
+    queryKey: ['top-cities'],
+    queryFn: async () => {
+      const res = await fetch('/api/directory/top-cities');
+      if (!res.ok) throw new Error('Failed to fetch cities');
+      return res.json();
+    },
+  });
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +138,53 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Browse Directory - Internal Linking for SEO */}
+      {topCities && topCities.length > 0 && (
+        <section className="py-16 px-4 bg-slate-50">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-10">
+              <h2 className="text-3xl font-bold text-navy-900 mb-4">
+                Browse Strategic Advisors by Location
+              </h2>
+              <p className="text-slate-600 max-w-2xl mx-auto">
+                Find CPAs and Wealth Managers specializing in 831(b) captives, reinsurance, and proactive tax strategies in your city.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {topCities.map((city) => (
+                <a
+                  key={city.slug}
+                  href={`/directory/location/${city.slug}`}
+                  className="group bg-white rounded-lg border border-slate-200 p-4 hover:border-navy-300 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <MapPin className="h-4 w-4 text-amber-500" />
+                    <span className="font-semibold text-navy-900 group-hover:text-amber-600 transition-colors">
+                      {city.city}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">{city.state}</span>
+                    <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                      {city.count} advisor{city.count !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
+            <div className="text-center mt-8">
+              <a
+                href="/search"
+                className="inline-flex items-center gap-2 text-navy-600 hover:text-navy-800 font-medium"
+              >
+                View All Locations
+                <ArrowRight className="h-4 w-4" />
+              </a>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* CTA */}
       <section className="py-16 px-4 bg-navy-900 text-white">

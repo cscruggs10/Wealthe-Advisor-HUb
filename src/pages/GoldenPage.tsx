@@ -50,15 +50,19 @@ export default function GoldenPage() {
     enabled: !!specialty && !!citySlug,
   });
 
-  // Inject JSON-LD structured data
+  // Inject JSON-LD structured data and meta tags
   useEffect(() => {
     if (!data) return;
 
-    const jsonLd = {
+    const pageTitle = `Top ${data.specialty} Advisors in ${data.city}, ${data.state}`;
+    const metaDescription = `Find the best strategic ${data.specialty.toLowerCase()} CPAs and Wealth Managers in ${data.city}, ${data.state}. Specialized in 831(b) captives and reinsurance for business owners with $5M+ revenue.`;
+
+    // Collection Page schema
+    const collectionSchema = {
       "@context": "https://schema.org",
       "@type": "CollectionPage",
-      "name": `${data.specialty} Advisors in ${data.city}, ${data.state} | The Alpha Directory`,
-      "description": `Find ${data.advisorCount} verified ${data.specialty.toLowerCase()} advisors in ${data.city}, ${data.state}. Connect with strategic CPAs and wealth managers specializing in ${data.specialty.toLowerCase()}.`,
+      "name": pageTitle,
+      "description": metaDescription,
       "url": window.location.href,
       "numberOfItems": data.advisorCount,
       "about": {
@@ -75,25 +79,76 @@ export default function GoldenPage() {
       },
       "provider": {
         "@type": "Organization",
-        "name": "The Alpha Directory"
+        "name": "The Alpha Directory",
+        "url": window.location.origin
       }
     };
 
-    const script = document.createElement('script');
-    script.type = 'application/ld+json';
-    script.text = JSON.stringify(jsonLd);
-    script.id = 'golden-page-jsonld';
+    // Breadcrumb schema - 4 levels deep for Golden Pages
+    const breadcrumbSchema = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": window.location.origin
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": data.specialty,
+          "item": `${window.location.origin}/directory/${data.specialtySlug}`
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": `${data.city}, ${data.state}`,
+          "item": `${window.location.origin}/directory/location/${data.citySlug}`
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": `${data.specialty} in ${data.city}`,
+          "item": window.location.href
+        }
+      ]
+    };
 
-    const existing = document.getElementById('golden-page-jsonld');
-    if (existing) existing.remove();
-    document.head.appendChild(script);
+    // Remove existing scripts
+    document.getElementById('golden-page-jsonld')?.remove();
+    document.getElementById('breadcrumb-jsonld')?.remove();
+
+    // Add collection schema
+    const collectionScript = document.createElement('script');
+    collectionScript.type = 'application/ld+json';
+    collectionScript.text = JSON.stringify(collectionSchema);
+    collectionScript.id = 'golden-page-jsonld';
+    document.head.appendChild(collectionScript);
+
+    // Add breadcrumb schema
+    const breadcrumbScript = document.createElement('script');
+    breadcrumbScript.type = 'application/ld+json';
+    breadcrumbScript.text = JSON.stringify(breadcrumbSchema);
+    breadcrumbScript.id = 'breadcrumb-jsonld';
+    document.head.appendChild(breadcrumbScript);
 
     // Update page title
-    document.title = `${data.specialty} Advisors in ${data.city}, ${data.state} | The Alpha Directory`;
+    document.title = pageTitle;
+
+    // Update meta description
+    let metaTag = document.querySelector('meta[name="description"]');
+    if (!metaTag) {
+      metaTag = document.createElement('meta');
+      metaTag.setAttribute('name', 'description');
+      document.head.appendChild(metaTag);
+    }
+    metaTag.setAttribute('content', metaDescription);
 
     return () => {
-      const toRemove = document.getElementById('golden-page-jsonld');
-      if (toRemove) toRemove.remove();
+      document.getElementById('golden-page-jsonld')?.remove();
+      document.getElementById('breadcrumb-jsonld')?.remove();
     };
   }, [data]);
 

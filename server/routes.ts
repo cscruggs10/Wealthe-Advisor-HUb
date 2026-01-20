@@ -353,6 +353,32 @@ export async function registerRoutes(app: Express) {
     }
   });
 
+  // Get top cities for homepage directory browse
+  app.get('/api/directory/top-cities', async (_req, res) => {
+    try {
+      const cities = await storage.getUniqueCities();
+      // Return top 10 most populated cities
+      res.json(cities.slice(0, 10));
+    } catch (error) {
+      console.error('Error fetching top cities:', error);
+      res.status(500).json({ message: 'Failed to fetch top cities' });
+    }
+  });
+
+  // Get related locations for advisor profile (same state, different cities)
+  app.get('/api/directory/related/:state', async (req, res) => {
+    try {
+      const cities = await storage.getUniqueCities();
+      const relatedCities = cities
+        .filter(c => c.state === req.params.state.toUpperCase())
+        .slice(0, 6);
+      res.json(relatedCities);
+    } catch (error) {
+      console.error('Error fetching related locations:', error);
+      res.status(500).json({ message: 'Failed to fetch related locations' });
+    }
+  });
+
   // ============================================
   // ADMIN ROUTES
   // ============================================

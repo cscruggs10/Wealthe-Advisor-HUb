@@ -52,38 +52,87 @@ export default function SpecialtyHubPage() {
     enabled: !!specialty,
   });
 
-  // Inject JSON-LD structured data
+  // Inject JSON-LD structured data and meta tags
   useEffect(() => {
     if (!data) return;
 
-    const jsonLd = {
+    const pageTitle = `Top ${data.specialty} Advisors | Strategic CPAs & Wealth Managers`;
+    const metaDescription = `Find the best ${data.specialty.toLowerCase()} CPAs and Wealth Managers. ${data.advisorCount} verified professionals specializing in 831(b) captives, reinsurance, and strategic tax planning for business owners.`;
+
+    // Collection Page schema
+    const collectionSchema = {
       "@context": "https://schema.org",
       "@type": "CollectionPage",
-      "name": `${data.specialty} Advisors | The Alpha Directory`,
-      "description": `Find top ${data.specialty} advisors and CPAs. ${data.advisorCount} verified professionals ready to help with your ${data.specialty.toLowerCase()} needs.`,
+      "name": pageTitle,
+      "description": metaDescription,
       "url": window.location.href,
       "numberOfItems": data.advisorCount,
       "provider": {
         "@type": "Organization",
-        "name": "The Alpha Directory"
+        "name": "The Alpha Directory",
+        "url": window.location.origin
       }
     };
 
-    const script = document.createElement('script');
-    script.type = 'application/ld+json';
-    script.text = JSON.stringify(jsonLd);
-    script.id = 'specialty-hub-jsonld';
+    // Breadcrumb schema
+    const breadcrumbSchema = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": window.location.origin
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Directory",
+          "item": `${window.location.origin}/search`
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": `${data.specialty} Advisors`,
+          "item": window.location.href
+        }
+      ]
+    };
 
-    const existing = document.getElementById('specialty-hub-jsonld');
-    if (existing) existing.remove();
-    document.head.appendChild(script);
+    // Remove existing scripts
+    document.getElementById('specialty-hub-jsonld')?.remove();
+    document.getElementById('breadcrumb-jsonld')?.remove();
+
+    // Add collection schema
+    const collectionScript = document.createElement('script');
+    collectionScript.type = 'application/ld+json';
+    collectionScript.text = JSON.stringify(collectionSchema);
+    collectionScript.id = 'specialty-hub-jsonld';
+    document.head.appendChild(collectionScript);
+
+    // Add breadcrumb schema
+    const breadcrumbScript = document.createElement('script');
+    breadcrumbScript.type = 'application/ld+json';
+    breadcrumbScript.text = JSON.stringify(breadcrumbSchema);
+    breadcrumbScript.id = 'breadcrumb-jsonld';
+    document.head.appendChild(breadcrumbScript);
 
     // Update page title
-    document.title = `${data.specialty} Advisors | The Alpha Directory`;
+    document.title = pageTitle;
+
+    // Update meta description
+    let metaTag = document.querySelector('meta[name="description"]');
+    if (!metaTag) {
+      metaTag = document.createElement('meta');
+      metaTag.setAttribute('name', 'description');
+      document.head.appendChild(metaTag);
+    }
+    metaTag.setAttribute('content', metaDescription);
 
     return () => {
-      const toRemove = document.getElementById('specialty-hub-jsonld');
-      if (toRemove) toRemove.remove();
+      document.getElementById('specialty-hub-jsonld')?.remove();
+      document.getElementById('breadcrumb-jsonld')?.remove();
     };
   }, [data]);
 

@@ -1,7 +1,14 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute } from 'wouter';
-import { Shield, MapPin, Award, Globe, Linkedin, ArrowLeft, CheckCircle, Star } from 'lucide-react';
+import { Shield, MapPin, Award, Globe, Linkedin, ArrowLeft, CheckCircle, Star, Building2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+
+interface RelatedCity {
+  city: string;
+  state: string;
+  slug: string;
+  count: number;
+}
 
 interface Advisor {
   id: string;
@@ -31,6 +38,17 @@ export default function AdvisorPage() {
       return res.json();
     },
     enabled: !!slug,
+  });
+
+  // Fetch related locations (same state)
+  const { data: relatedCities } = useQuery<RelatedCity[]>({
+    queryKey: ['related-locations', advisor?.state],
+    queryFn: async () => {
+      const res = await fetch(`/api/directory/related/${advisor?.state}`);
+      if (!res.ok) throw new Error('Failed to fetch related locations');
+      return res.json();
+    },
+    enabled: !!advisor?.state,
   });
 
   // Inject JSON-LD structured data for SEO
@@ -238,6 +256,43 @@ export default function AdvisorPage() {
             <LeadForm advisor={advisor} />
           </div>
         </div>
+
+        {/* Related Locations Section - Internal Linking for SEO */}
+        {relatedCities && relatedCities.length > 0 && (
+          <section className="mt-12 pt-8 border-t border-slate-200">
+            <div className="flex items-center gap-2 mb-4">
+              <Building2 className="h-5 w-5 text-navy-600" />
+              <h2 className="text-lg font-semibold text-navy-900">
+                More Strategic Advisors in {advisor.state}
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {relatedCities
+                .filter(city => city.city !== advisor.city) // Exclude current city
+                .slice(0, 6)
+                .map((city) => (
+                  <a
+                    key={city.slug}
+                    href={`/directory/location/${city.slug}`}
+                    className="flex items-center justify-between px-4 py-3 bg-white rounded-lg border border-slate-200 hover:border-navy-300 hover:shadow-sm transition-all"
+                  >
+                    <span className="text-slate-700 font-medium">{city.city}</span>
+                    <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">
+                      {city.count} advisor{city.count !== 1 ? 's' : ''}
+                    </span>
+                  </a>
+                ))}
+            </div>
+            <div className="mt-4 text-center">
+              <a
+                href="/search"
+                className="text-navy-600 hover:text-navy-800 font-medium text-sm"
+              >
+                Browse All Locations →
+              </a>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

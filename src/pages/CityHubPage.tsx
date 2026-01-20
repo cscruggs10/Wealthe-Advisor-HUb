@@ -52,15 +52,19 @@ export default function CityHubPage() {
     enabled: !!citySlug,
   });
 
-  // Inject JSON-LD structured data
+  // Inject JSON-LD structured data and meta tags
   useEffect(() => {
     if (!data) return;
 
-    const jsonLd = {
+    const pageTitle = `Top Strategic CPAs & Wealth Advisors in ${data.city}, ${data.state}`;
+    const metaDescription = `Find the best strategic CPAs and Wealth Managers in ${data.city}, ${data.state}. ${data.advisorCount} verified professionals specializing in 831(b) captives, reinsurance, and tax planning for business owners.`;
+
+    // Collection Page schema
+    const collectionSchema = {
       "@context": "https://schema.org",
       "@type": "CollectionPage",
-      "name": `Strategic CPAs & Wealth Advisors in ${data.city}, ${data.state} | The Alpha Directory`,
-      "description": `Find ${data.advisorCount} verified CPAs and Wealth Advisors in ${data.city}, ${data.state}. Strategic tax planning and wealth management professionals.`,
+      "name": pageTitle,
+      "description": metaDescription,
       "url": window.location.href,
       "numberOfItems": data.advisorCount,
       "spatialCoverage": {
@@ -73,25 +77,70 @@ export default function CityHubPage() {
       },
       "provider": {
         "@type": "Organization",
-        "name": "The Alpha Directory"
+        "name": "The Alpha Directory",
+        "url": window.location.origin
       }
     };
 
-    const script = document.createElement('script');
-    script.type = 'application/ld+json';
-    script.text = JSON.stringify(jsonLd);
-    script.id = 'city-hub-jsonld';
+    // Breadcrumb schema
+    const breadcrumbSchema = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": window.location.origin
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Directory",
+          "item": `${window.location.origin}/search`
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": `${data.city}, ${data.state}`,
+          "item": window.location.href
+        }
+      ]
+    };
 
-    const existing = document.getElementById('city-hub-jsonld');
-    if (existing) existing.remove();
-    document.head.appendChild(script);
+    // Remove existing scripts
+    document.getElementById('city-hub-jsonld')?.remove();
+    document.getElementById('breadcrumb-jsonld')?.remove();
+
+    // Add collection schema
+    const collectionScript = document.createElement('script');
+    collectionScript.type = 'application/ld+json';
+    collectionScript.text = JSON.stringify(collectionSchema);
+    collectionScript.id = 'city-hub-jsonld';
+    document.head.appendChild(collectionScript);
+
+    // Add breadcrumb schema
+    const breadcrumbScript = document.createElement('script');
+    breadcrumbScript.type = 'application/ld+json';
+    breadcrumbScript.text = JSON.stringify(breadcrumbSchema);
+    breadcrumbScript.id = 'breadcrumb-jsonld';
+    document.head.appendChild(breadcrumbScript);
 
     // Update page title
-    document.title = `Strategic CPAs & Wealth Advisors in ${data.city}, ${data.state} | The Alpha Directory`;
+    document.title = pageTitle;
+
+    // Update meta description
+    let metaTag = document.querySelector('meta[name="description"]');
+    if (!metaTag) {
+      metaTag = document.createElement('meta');
+      metaTag.setAttribute('name', 'description');
+      document.head.appendChild(metaTag);
+    }
+    metaTag.setAttribute('content', metaDescription);
 
     return () => {
-      const toRemove = document.getElementById('city-hub-jsonld');
-      if (toRemove) toRemove.remove();
+      document.getElementById('city-hub-jsonld')?.remove();
+      document.getElementById('breadcrumb-jsonld')?.remove();
     };
   }, [data]);
 
