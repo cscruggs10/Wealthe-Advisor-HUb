@@ -20,6 +20,11 @@ const STATE_NAMES: Record<string, string> = {
   DC: 'District of Columbia',
 };
 
+// State name to abbreviation reverse lookup
+const STATE_ABBREVS: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_NAMES).map(([abbr, name]) => [name.toUpperCase(), abbr])
+);
+
 // Common city name normalizations
 const CITY_NORMALIZATIONS: Record<string, string> = {
   'nyc': 'New York',
@@ -37,22 +42,27 @@ const CITY_NORMALIZATIONS: Record<string, string> = {
 };
 
 /**
+ * Delay utility for rate limiting between page requests
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * Normalize city name for clean SEO URLs
  */
 function normalizeCity(city: string): string {
   const lowerCity = city.toLowerCase().trim();
 
-  // Check for common abbreviations/nicknames
   if (CITY_NORMALIZATIONS[lowerCity]) {
     return CITY_NORMALIZATIONS[lowerCity];
   }
 
-  // Proper case the city name
   return city.trim()
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
-    .replace(/\s+/g, ' '); // Remove extra spaces
+    .replace(/\s+/g, ' ');
 }
 
 /**
@@ -61,21 +71,14 @@ function normalizeCity(city: string): string {
 function normalizeState(state: string): string {
   const upperState = state.toUpperCase().trim();
 
-  // If already a valid abbreviation, return it
   if (STATE_NAMES[upperState]) {
     return upperState;
   }
 
-  // Check if it's a full state name and convert to abbreviation
-  const entry = Object.entries(STATE_NAMES).find(
-    ([_, name]) => name.toUpperCase() === upperState
-  );
-
-  if (entry) {
-    return entry[0];
+  if (STATE_ABBREVS[upperState]) {
+    return STATE_ABBREVS[upperState];
   }
 
-  // Return as-is if can't normalize
   return upperState.substring(0, 2);
 }
 
@@ -104,26 +107,27 @@ export interface ScrapedAdvisor {
   bio?: string;
   specialties?: string[];
   profileUrl?: string;
-  priorityScore?: number; // Higher = more valuable for our niche
+  priorityScore?: number;
 }
 
-// Priority keywords for advisor scoring
+// Priority keywords for advisor scoring - ALPHA niche focus
 const HIGH_PRIORITY_KEYWORDS = [
   'tax', 'captive', 'reinsurance', '831(b)', '831b',
   'high net worth', 'hnw', 'uhnw', 'ultra high',
   'business owner', 'entrepreneur', 'succession',
   'estate planning', 'wealth preservation', 'tax optimization',
-  'strategic', 'proactive', 'advanced tax'
+  'strategic', 'proactive', 'advanced tax',
+  'cpa', 'certified public accountant', 'tax planning'
 ];
 
 const MEDIUM_PRIORITY_KEYWORDS = [
-  'cpa', 'accounting', 'financial planning', 'wealth management',
-  'investment', 'retirement', 'executive', 'corporate'
+  'accounting', 'financial planning', 'wealth management',
+  'investment', 'retirement', 'executive', 'corporate',
+  'cfp', 'fiduciary', 'fee-only'
 ];
 
 /**
  * Calculate priority score for an advisor (0-100)
- * Higher scores = more valuable for our Tax/Captive/HNW niche
  */
 function calculatePriorityScore(advisor: ScrapedAdvisor): number {
   let score = 0;
@@ -136,12 +140,13 @@ function calculatePriorityScore(advisor: ScrapedAdvisor): number {
   ].filter(Boolean).join(' ').toLowerCase();
 
   // High priority keywords (10 points each, max 50)
+  let highScore = 0;
   for (const keyword of HIGH_PRIORITY_KEYWORDS) {
     if (searchText.includes(keyword)) {
-      score += 10;
+      highScore += 10;
     }
   }
-  score = Math.min(score, 50);
+  score += Math.min(highScore, 50);
 
   // Medium priority keywords (5 points each, max 25)
   let mediumScore = 0;
@@ -153,7 +158,7 @@ function calculatePriorityScore(advisor: ScrapedAdvisor): number {
   score += Math.min(mediumScore, 25);
 
   // Bonus for CPA designation
-  if (advisor.designation.includes('CPA')) {
+  if (searchText.includes('cpa') || advisor.designation.includes('CPA')) {
     score += 15;
   }
 
@@ -184,10 +189,211 @@ export interface ScrapeResult {
 }
 
 /**
- * Scrape advisors directly from the listing page content
+ * Detect which scraper to use based on URL
  */
-export async function scrapeAdvisorsFromListingPage(url: string, limit: number = 10): Promise<ScrapeResult> {
-  console.log(`Scraping listing page: ${url}`);
+function detectSource(url: string): 'wealthtender' | 'samslist' | 'unknown' {
+  if (url.includes('wealthtender.com')) return 'wealthtender';
+  if (url.includes('samslist.co')) return 'samslist';
+  return 'unknown';
+}
+
+/**
+ * Parse Wealthtender advisor cards from markdown
+ * Format: [![Headshot of NAME](img)![logo](logo)\\\\NAME CREDENTIALSCompanyTagline\\\\City, State\\...](profile_url)
+ */
+function parseWealthtenderAdvisors(content: string, limit: number): ScrapedAdvisor[] {
+  const advisors: ScrapedAdvisor[] = [];
+  const seenNames = new Set<string>();
+
+  // Pattern to match Wealthtender advisor cards
+  // Looking for: [Headshot of NAME] ... City, STATE ... ](profile_url)
+  const cardPattern = /\[!\[Headshot of ([^\]]+)\][^\]]*\]\([^)]+\)!\[[^\]]*\]\([^)]+\)\\*\n*\\*\n*([^\\]+)\\*\n*\\*\n*([^,]+),\s*([A-Z]{2})/g;
+
+  let match;
+  while ((match = cardPattern.exec(content)) !== null && advisors.length < limit) {
+    const headshot = match[1].trim();
+    const nameBlock = match[2].trim();
+    const city = match[3].trim();
+    const state = match[4].trim();
+
+    // The headshot alt text usually has the clean name
+    const name = headshot;
+
+    if (seenNames.has(name)) continue;
+    seenNames.add(name);
+
+    // Extract designation from name (CFP®, CPA, MBA, etc.)
+    let designation = 'Wealth Manager';
+    const nameLower = name.toLowerCase();
+    if (nameLower.includes('cpa')) {
+      designation = nameLower.includes('cfp') ? 'CPA & Wealth Manager' : 'CPA';
+    } else if (nameLower.includes('cfp')) {
+      designation = 'Wealth Manager';
+    }
+
+    // Parse specialties from the name/credentials
+    const specialties: string[] = [];
+    if (nameLower.includes('cpa')) specialties.push('Tax Planning');
+    if (nameLower.includes('cfp')) specialties.push('Financial Planning');
+    if (nameLower.includes('cepa')) specialties.push('Exit Planning');
+    if (nameLower.includes('ricp')) specialties.push('Retirement Planning');
+    if (nameLower.includes('cfa')) specialties.push('Investment Management');
+
+    // Extract company and tagline from nameBlock
+    const lines = nameBlock.split(/[\n\\]+/).filter(l => l.trim().length > 0);
+    let firmName = '';
+    let bio = '';
+
+    if (lines.length >= 2) {
+      firmName = lines[1]?.trim() || '';
+      bio = lines.slice(2).join(' ').trim();
+    }
+
+    advisors.push({
+      name: name.replace(/,?\s*(CFP®?|CPA|MBA|CFA|ChFC|RICP|CEPA|AEP®?|CRPC®?|BFA™?|EA).*$/i, '').trim() || name,
+      firmName: firmName || undefined,
+      designation,
+      city: normalizeCity(city),
+      state: normalizeState(state),
+      zipCode: '00000', // Will be enriched later
+      bio: bio || `${name} is a financial professional based in ${city}, ${state}.`,
+      specialties: specialties.length > 0 ? specialties : ['Financial Planning', 'Wealth Management'],
+    });
+  }
+
+  // If regex didn't work, try alternative parsing
+  if (advisors.length === 0) {
+    return parseWealthtenderAlternative(content, limit);
+  }
+
+  return advisors;
+}
+
+/**
+ * Alternative Wealthtender parsing - simpler pattern with better location extraction
+ */
+function parseWealthtenderAlternative(content: string, limit: number): ScrapedAdvisor[] {
+  const advisors: ScrapedAdvisor[] = [];
+  const seenNames = new Set<string>();
+
+  // Match "Headshot of NAME" pattern
+  const namePattern = /\[Headshot of ([^\]]+)\]/g;
+  const names: string[] = [];
+  let match;
+
+  while ((match = namePattern.exec(content)) !== null) {
+    const name = match[1].trim();
+    if (!seenNames.has(name) && name.length > 3) {
+      seenNames.add(name);
+      names.push(name);
+    }
+  }
+
+  // Find ALL locations - pattern: "City, ST" (with various trailing chars)
+  // Look for patterns like "Duluth, GA\n" or "Houston, TX\"
+  const locationPattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z.]+)*),\s*([A-Z]{2})(?:\s*\\|\s*\n|$)/g;
+  const locations: { city: string; state: string }[] = [];
+
+  while ((match = locationPattern.exec(content)) !== null) {
+    const city = match[1].trim();
+    const state = match[2].trim();
+    // Filter out false positives (navigation items, etc.)
+    if (city.length > 2 && city.length < 30 && STATE_NAMES[state]) {
+      locations.push({ city, state });
+    }
+  }
+
+  // Combine names with locations (locations appear after each advisor card)
+  for (let i = 0; i < Math.min(names.length, limit); i++) {
+    const name = names[i];
+    // Use location at same index, or cycle through if we have some locations
+    const location = locations[i] || locations[i % Math.max(locations.length, 1)] || { city: 'New York', state: 'NY' };
+
+    // Extract designation from credentials
+    let designation = 'Wealth Manager';
+    const nameLower = name.toLowerCase();
+    if (nameLower.includes('cpa')) {
+      designation = nameLower.includes('cfp') ? 'CPA & Wealth Manager' : 'CPA';
+    }
+
+    // Build specialties from credentials
+    const specialties: string[] = [];
+    if (nameLower.includes('cpa')) specialties.push('Tax Planning');
+    if (nameLower.includes('cfp')) specialties.push('Financial Planning');
+    if (nameLower.includes('cepa')) specialties.push('Exit Planning');
+    if (nameLower.includes('ricp')) specialties.push('Retirement Planning');
+    if (nameLower.includes('cfa')) specialties.push('Investment Management');
+    if (nameLower.includes('mba')) specialties.push('Business Strategy');
+
+    advisors.push({
+      name,
+      designation,
+      city: normalizeCity(location.city),
+      state: normalizeState(location.state),
+      zipCode: '00000',
+      specialties: specialties.length > 0 ? specialties : ['Financial Planning', 'Wealth Management'],
+    });
+  }
+
+  return advisors;
+}
+
+/**
+ * Parse Samslist advisors (original parser)
+ */
+function parseSamslistAdvisors(content: string, limit: number): ScrapedAdvisor[] {
+  const advisors: ScrapedAdvisor[] = [];
+
+  const advisorPattern = /!\[([^\|]+)\s*\|\s*([^\]]+)\]\([^)]+\)\s*\n\n([^\n]+?)(?:\n|$)/g;
+
+  let match;
+  while ((match = advisorPattern.exec(content)) !== null && advisors.length < limit) {
+    const specialtiesStr = match[2].trim();
+    const displayName = match[3].trim();
+
+    if (displayName.includes('Home') ||
+        displayName.includes('Contact') ||
+        displayName.includes('View More') ||
+        displayName.includes('Professional Services') ||
+        displayName.includes('Help Guides') ||
+        displayName.includes('Choose Specialties') ||
+        displayName.length < 3 ||
+        displayName.startsWith('#') ||
+        displayName.startsWith('!')) {
+      continue;
+    }
+
+    const specialties = specialtiesStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+    let designation: 'CPA' | 'Wealth Manager' | 'CPA & Wealth Manager' = 'Wealth Manager';
+    const specialtiesLower = specialtiesStr.toLowerCase();
+    if (specialtiesLower.includes('tax') && (specialtiesLower.includes('wealth') || specialtiesLower.includes('financial'))) {
+      designation = 'CPA & Wealth Manager';
+    } else if (specialtiesLower.includes('tax') || specialtiesLower.includes('accounting')) {
+      designation = 'CPA';
+    }
+
+    const name = displayName;
+    if (advisors.some(a => a.name === name)) continue;
+
+    advisors.push({
+      name,
+      designation,
+      city: 'New York',
+      state: 'NY',
+      zipCode: '10001',
+      specialties: specialties.slice(0, 5),
+    });
+  }
+
+  return advisors;
+}
+
+/**
+ * Scrape advisors from any supported listing page
+ */
+export async function scrapeAdvisorsFromListingPage(url: string, limit: number = 20): Promise<ScrapeResult> {
+  console.log(`Scraping: ${url}`);
 
   try {
     const result = await firecrawl.scrape(url, {
@@ -200,10 +406,23 @@ export async function scrapeAdvisorsFromListingPage(url: string, limit: number =
       return { success: false, advisors: [], error: 'No content returned from Firecrawl' };
     }
 
-    // Parse advisors from the markdown content
-    const advisors = parseAdvisorsFromMarkdown(content, limit);
+    // Detect source and use appropriate parser
+    const source = detectSource(url);
+    let advisors: ScrapedAdvisor[];
 
-    console.log(`Parsed ${advisors.length} advisors from page`);
+    switch (source) {
+      case 'wealthtender':
+        advisors = parseWealthtenderAdvisors(content, limit);
+        break;
+      case 'samslist':
+        advisors = parseSamslistAdvisors(content, limit);
+        break;
+      default:
+        // Try Wealthtender parser as default (more robust)
+        advisors = parseWealthtenderAdvisors(content, limit);
+    }
+
+    console.log(`Parsed ${advisors.length} advisors from ${source}`);
 
     return { success: true, advisors };
   } catch (error) {
@@ -212,150 +431,19 @@ export async function scrapeAdvisorsFromListingPage(url: string, limit: number =
 }
 
 /**
- * Parse advisor data from the markdown content
- * Format: ![Name | Specialties](image_url)\n\nName\n\n...\n\n"testimonial"
+ * Check if an advisor already exists in the database (by slug)
  */
-function parseAdvisorsFromMarkdown(content: string, limit: number): ScrapedAdvisor[] {
-  const advisors: ScrapedAdvisor[] = [];
+export async function checkDuplicateBySlug(name: string, city: string, specialty: string): Promise<boolean> {
+  const normalizedCity = normalizeCity(city);
+  const slug = generateAdvisorSlug(name, normalizedCity, specialty);
 
-  // Pattern to match advisor entries
-  // ![Name | Specialties](url)\n\nName
-  const advisorPattern = /!\[([^\|]+)\s*\|\s*([^\]]+)\]\([^)]+\)\s*\n\n([^\n]+?)(?:\n|$)/g;
+  const existing = await db
+    .select({ id: advisors.id })
+    .from(advisors)
+    .where(eq(advisors.slug, slug))
+    .limit(1);
 
-  let match;
-  while ((match = advisorPattern.exec(content)) !== null && advisors.length < limit) {
-    const imageAltName = match[1].trim();
-    const specialtiesStr = match[2].trim();
-    const displayName = match[3].trim();
-
-    // Skip navigation items, logos, etc.
-    if (displayName.includes('Home') ||
-        displayName.includes('Contact') ||
-        displayName.includes('View More') ||
-        displayName.length < 3 ||
-        displayName.startsWith('#') ||
-        displayName.startsWith('!')) {
-      continue;
-    }
-
-    // Parse specialties
-    const specialties = specialtiesStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
-
-    // Extract any testimonial/bio that follows
-    const afterMatch = content.substring(match.index + match[0].length);
-    const bioMatch = afterMatch.match(/"([^"]{50,500})"/);
-    const bio = bioMatch ? bioMatch[1] : undefined;
-
-    // Determine designation based on specialties
-    let designation: 'CPA' | 'Wealth Manager' | 'CPA & Wealth Manager' = 'Wealth Manager';
-    const specialtiesLower = specialtiesStr.toLowerCase();
-    if (specialtiesLower.includes('tax') && (specialtiesLower.includes('wealth') || specialtiesLower.includes('financial'))) {
-      designation = 'CPA & Wealth Manager';
-    } else if (specialtiesLower.includes('tax') || specialtiesLower.includes('accounting')) {
-      designation = 'CPA';
-    }
-
-    // Use the display name (cleaner) but fall back to image alt name
-    const name = displayName || imageAltName;
-
-    // Skip if we already have this advisor
-    if (advisors.some(a => a.name === name)) {
-      continue;
-    }
-
-    advisors.push({
-      name,
-      designation,
-      city: 'New York', // Default - samslist doesn't show location on listing
-      state: 'NY',
-      zipCode: '10001',
-      bio,
-      specialties: specialties.slice(0, 5), // Limit to 5 specialties
-    });
-  }
-
-  // If regex didn't work well, try alternative parsing
-  if (advisors.length === 0) {
-    return parseAdvisorsAlternative(content, limit);
-  }
-
-  return advisors;
-}
-
-/**
- * Alternative parsing method - look for name patterns
- */
-function parseAdvisorsAlternative(content: string, limit: number): ScrapedAdvisor[] {
-  const advisors: ScrapedAdvisor[] = [];
-  const lines = content.split('\n');
-
-  // Common advisor name patterns (CFP, CPA, etc after name)
-  const namePatterns = [
-    /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+),?\s*(?:CFP|CPA|EA|BFA|CEPA)/,
-    /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*$/,
-  ];
-
-  const seenNames = new Set<string>();
-
-  for (let i = 0; i < lines.length && advisors.length < limit; i++) {
-    const line = lines[i].trim();
-
-    // Skip short lines, headers, links
-    if (line.length < 5 || line.startsWith('#') || line.startsWith('[') || line.startsWith('!')) {
-      continue;
-    }
-
-    for (const pattern of namePatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        const name = match[1] || match[0];
-
-        // Skip if already seen or looks like a company
-        if (seenNames.has(name) ||
-            name.includes('LLC') ||
-            name.includes('Inc') ||
-            name.includes('Group') ||
-            name.includes('Wealth') ||
-            name.length < 5) {
-          continue;
-        }
-
-        seenNames.add(name);
-
-        // Look for specialties in surrounding lines
-        const context = lines.slice(Math.max(0, i - 3), i + 5).join(' ');
-        const specialties: string[] = [];
-
-        const specialtyKeywords = [
-          '401(k)', 'IRA', 'Tax', 'Estate', 'Retirement', 'Investment',
-          'Financial Planning', 'Wealth Management', 'Portfolio', 'Insurance'
-        ];
-
-        for (const keyword of specialtyKeywords) {
-          if (context.includes(keyword)) {
-            specialties.push(keyword.includes('401') ? '401(k) Management' : keyword);
-          }
-        }
-
-        // Look for bio/testimonial
-        const bioMatch = context.match(/"([^"]{30,300})"/);
-
-        advisors.push({
-          name: name.trim(),
-          designation: 'Wealth Manager',
-          city: 'New York',
-          state: 'NY',
-          zipCode: '10001',
-          bio: bioMatch ? bioMatch[1] : undefined,
-          specialties: specialties.length > 0 ? specialties : ['Financial Planning', 'Wealth Management'],
-        });
-
-        break;
-      }
-    }
-  }
-
-  return advisors;
+  return existing.length > 0;
 }
 
 /**
@@ -386,16 +474,13 @@ export async function checkDuplicate(websiteUrl?: string, slug?: string): Promis
  */
 export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<{ success: boolean; slug?: string; error?: string }> {
   try {
-    // Normalize city and state for clean SEO URLs
     const normalizedCity = normalizeCity(scraped.city);
     const normalizedState = normalizeState(scraped.state);
 
     console.log(`  Location: ${scraped.city}, ${scraped.state} -> ${normalizedCity}, ${normalizedState}`);
 
-    // Generate slug with normalized location
     const slug = generateAdvisorSlug(scraped.name, normalizedCity, scraped.specialties?.[0] || scraped.designation);
 
-    // Check for duplicates
     const isDuplicate = await checkDuplicate(scraped.websiteUrl, slug);
     if (isDuplicate) {
       return { success: false, error: 'Duplicate advisor (website or slug already exists)' };
@@ -420,7 +505,6 @@ export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<
       );
     }
 
-    // Merge specialties
     const finalSpecialties = [
       ...new Set([
         ...(scraped.specialties || []),
@@ -428,7 +512,6 @@ export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<
       ])
     ].slice(0, 6);
 
-    // Insert into database with normalized location data
     await db.insert(advisors).values({
       name: scraped.name,
       firmName: scraped.firmName,
@@ -452,62 +535,147 @@ export async function processAndInsertAdvisor(scraped: ScrapedAdvisor): Promise<
 }
 
 /**
- * Main scraping pipeline
+ * Wealthtender source URLs - since pagination is JS-based, we use multiple URLs
+ * Each URL shows different advisors (main listing, reviewed, sorted differently)
  */
-export async function runScraperPipeline(listingUrl: string, limit: number = 3): Promise<void> {
-  console.log('='.repeat(50));
+const WEALTHTENDER_SOURCES = [
+  'https://wealthtender.com/financial-advisors/',
+  'https://wealthtender.com/financial-advisors-reviewed/',
+  'https://wealthtender.com/financial-advisors/?orderby=menu_order',
+  'https://wealthtender.com/financial-advisors/?orderby=title',
+  'https://wealthtender.com/financial-advisors/?orderby=date',
+];
+
+/**
+ * Main scraping pipeline with multi-source support
+ */
+export async function runScraperPipeline(
+  baseUrl: string,
+  limitPerPage: number = 20,
+  maxPages: number = 1
+): Promise<void> {
+  const source = detectSource(baseUrl);
+  const isWealthtender = source === 'wealthtender';
+
+  console.log('='.repeat(60));
   console.log('Starting Advisor Scraper Pipeline');
-  console.log(`Target: ${listingUrl}`);
-  console.log(`Limit: ${limit} profiles`);
-  console.log('='.repeat(50));
+  console.log(`Source: ${source}`);
+  console.log(`Base URL: ${baseUrl}`);
+  console.log(`Limit per source: ${limitPerPage}`);
+  console.log(`Max sources/pages: ${maxPages}`);
+  console.log('='.repeat(60));
 
-  // Step 1: Scrape advisors from listing page
-  const scrapeResult = await scrapeAdvisorsFromListingPage(listingUrl, limit);
+  let totalSuccess = 0;
+  let totalSkipped = 0;
+  let totalErrors = 0;
+  let totalScraped = 0;
 
-  if (!scrapeResult.success || scrapeResult.advisors.length === 0) {
-    console.log(`No advisors found: ${scrapeResult.error || 'Unknown error'}`);
-    return;
-  }
+  // For Wealthtender, use multiple source URLs since pagination is JS-based
+  const urls = isWealthtender
+    ? WEALTHTENDER_SOURCES.slice(0, maxPages)
+    : Array.from({ length: maxPages }, (_, i) => {
+        const url = new URL(baseUrl);
+        if (i > 0) url.searchParams.set('page', String(i + 1));
+        return url.toString();
+      });
 
-  console.log(`\nFound ${scrapeResult.advisors.length} advisors to process`);
+  for (let i = 0; i < urls.length; i++) {
+    const pageUrl = urls[i];
+    const pageNum = i + 1;
 
-  // Step 2: Sort advisors by priority (Tax/Captive/HNW keywords first)
-  const prioritizedAdvisors = sortByPriority(scrapeResult.advisors);
+    console.log('\n' + '~'.repeat(60));
+    console.log(`SOURCE ${pageNum}/${urls.length}: ${pageUrl}`);
+    console.log('~'.repeat(60));
 
-  console.log('\nPriority-sorted advisors:');
-  prioritizedAdvisors.forEach((a, i) => {
-    console.log(`  ${i + 1}. ${a.name} (score: ${a.priorityScore})`);
-  });
-  console.log('');
+    const scrapeResult = await scrapeAdvisorsFromListingPage(pageUrl, limitPerPage);
 
-  // Step 3: Process each advisor (highest priority first)
-  let successCount = 0;
-  let skipCount = 0;
-  let errorCount = 0;
-
-  for (const advisor of prioritizedAdvisors) {
-    console.log('-'.repeat(40));
-    console.log(`Processing: ${advisor.name}`);
-
-    const insertResult = await processAndInsertAdvisor(advisor);
-
-    if (insertResult.success) {
-      console.log(`SUCCESS: Added ${advisor.name} -> ${insertResult.slug}`);
-      successCount++;
-    } else if (insertResult.error?.includes('Duplicate')) {
-      console.log(`SKIPPED: ${advisor.name} - ${insertResult.error}`);
-      skipCount++;
-    } else {
-      console.log(`ERROR: ${advisor.name} - ${insertResult.error}`);
-      errorCount++;
+    if (!scrapeResult.success) {
+      console.log(`Failed to scrape: ${scrapeResult.error}`);
+      continue;
     }
 
-    // Rate limiting for AI calls
-    await new Promise(resolve => setTimeout(resolve, 500));
+    if (scrapeResult.advisors.length === 0) {
+      console.log(`No advisors found. Continuing...`);
+      continue;
+    }
+
+    totalScraped += scrapeResult.advisors.length;
+    console.log(`Found ${scrapeResult.advisors.length} advisors`);
+
+    // Early duplicate check
+    console.log('\nChecking for duplicates before AI processing...');
+    const newAdvisors: ScrapedAdvisor[] = [];
+
+    for (const advisor of scrapeResult.advisors) {
+      const isDuplicate = await checkDuplicateBySlug(
+        advisor.name,
+        advisor.city,
+        advisor.specialties?.[0] || advisor.designation
+      );
+
+      if (isDuplicate) {
+        console.log(`  [SKIP] ${advisor.name} - already in database`);
+        totalSkipped++;
+      } else {
+        newAdvisors.push(advisor);
+      }
+    }
+
+    if (newAdvisors.length === 0) {
+      console.log(`All advisors already exist. Moving to next source.`);
+      if (i < urls.length - 1) {
+        console.log('\nWaiting 3 seconds...');
+        await delay(3000);
+      }
+      continue;
+    }
+
+    console.log(`\n${newAdvisors.length} new advisors to process`);
+
+    // Sort by priority
+    const prioritizedAdvisors = sortByPriority(newAdvisors);
+
+    console.log('\nPriority-sorted new advisors:');
+    prioritizedAdvisors.forEach((a, idx) => {
+      console.log(`  ${idx + 1}. ${a.name} (score: ${a.priorityScore})`);
+    });
+
+    // Process each advisor
+    for (const advisor of prioritizedAdvisors) {
+      console.log('\n' + '-'.repeat(40));
+      console.log(`Processing: ${advisor.name} (priority: ${advisor.priorityScore})`);
+
+      const insertResult = await processAndInsertAdvisor(advisor);
+
+      if (insertResult.success) {
+        console.log(`SUCCESS: Added ${advisor.name} -> ${insertResult.slug}`);
+        totalSuccess++;
+      } else if (insertResult.error?.includes('Duplicate')) {
+        console.log(`SKIPPED: ${advisor.name} - ${insertResult.error}`);
+        totalSkipped++;
+      } else {
+        console.log(`ERROR: ${advisor.name} - ${insertResult.error}`);
+        totalErrors++;
+      }
+
+      await delay(500);
+    }
+
+    // Delay between sources
+    if (i < urls.length - 1) {
+      console.log('\n>>> Waiting 3 seconds before next source...');
+      await delay(3000);
+    }
   }
 
-  console.log('\n' + '='.repeat(50));
-  console.log('Scraper Pipeline Complete');
-  console.log(`Success: ${successCount} | Skipped: ${skipCount} | Errors: ${errorCount}`);
-  console.log('='.repeat(50));
+  // Final summary
+  console.log('\n' + '='.repeat(60));
+  console.log('SCRAPER PIPELINE COMPLETE');
+  console.log('='.repeat(60));
+  console.log(`Sources scraped: ${urls.length}`);
+  console.log(`Total advisors found: ${totalScraped}`);
+  console.log(`Successfully added: ${totalSuccess}`);
+  console.log(`Skipped (duplicates): ${totalSkipped}`);
+  console.log(`Errors: ${totalErrors}`);
+  console.log('='.repeat(60));
 }
