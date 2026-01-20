@@ -78,7 +78,7 @@ export async function setupVite(app: Express, server: Server) {
 
   app.use(vite.middlewares);
 
-  app.use('*', async (req, res, next) => {
+  app.use('/{*path}', async (req, res, next) => {
     const url = req.originalUrl;
     const userAgent = req.headers['user-agent'] || '';
     const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -122,7 +122,7 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // Catch-all route for SPA - must be after static middleware
-  app.get('*', async (req, res) => {
+  app.get('/{*path}', async (req, res) => {
     const url = req.originalUrl;
     const userAgent = req.headers['user-agent'] || '';
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
